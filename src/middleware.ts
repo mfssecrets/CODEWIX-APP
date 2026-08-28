@@ -1,6 +1,16 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+// Public Supabase config — same fallback as src/lib/supabase/server.ts.
+// The anon key is PUBLIC by design (protected by RLS). This guarantees the
+// middleware can always authenticate the request even if the Cloudflare Worker
+// NEXT_PUBLIC_* variable is missing or the CI build didn't inline it.
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://akiuhzheutxkyjzowrzp.supabase.co';
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFraXVoemhldXR4a3lqem93cnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4Njk4MTMsImV4cCI6MjEwMzQ0NTgxM30.et2OiPyJZ1Q3lAlyDvZu817XqhuRoAuaCgWhJMf-TH4';
+
 const publicPaths = ['/', '/signin', '/signup', '/pricing'];
 const publicApiPrefixes = ['/api/auth/callback', '/api/billing/plans'];
 // Route groups (workspace), (ide) don't appear in URLs
@@ -10,8 +20,8 @@ export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
     {
       cookies: {
         getAll() {

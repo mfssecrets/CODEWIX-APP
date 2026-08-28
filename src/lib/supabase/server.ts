@@ -3,12 +3,24 @@ import { createClient as createServiceRoleClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * Public Supabase config. NEXT_PUBLIC_* vars are inlined at build time; we fall
+ * back to the project's public values when the env vars aren't set (e.g. on
+ * CI builds or if the Cloudflare Worker variable is missing). The anon key is
+ * PUBLIC by design — protected by RLS, not secrecy. Override via env vars.
+ */
+const PUBLIC_SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://akiuhzheutxkyjzowrzp.supabase.co';
+const PUBLIC_SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFraXVoemhldXR4a3lqem93cnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4Njk4MTMsImV4cCI6MjEwMzQ0NTgxM30.et2OiPyJZ1Q3lAlyDvZu817XqhuRoAuaCgWhJMf-TH4';
+
 export const createClient = async () => {
   const cookieStore = await cookies();
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    PUBLIC_SUPABASE_URL,
+    PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
         getAll() {
@@ -39,7 +51,7 @@ export const createClient = async () => {
  * misconfigurations surface immediately instead of producing silent 500s.
  */
 export const createServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     throw new Error(
@@ -54,8 +66,8 @@ export const createServiceClient = () => {
 // For middleware usage (no cookie jar, uses request/response)
 export const createMiddlewareClient = (request: NextRequest, response: NextResponse) => {
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    PUBLIC_SUPABASE_URL,
+    PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
         getAll() {
