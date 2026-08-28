@@ -4,5 +4,15 @@ compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 assets = { directory = ".open-next/assets", binding = "ASSETS" }
 
+# Runtime environment variables (non-secret). These are declared here so
+# `wrangler deploy` binds them to the Worker. Secret values (API keys) are
+# set via `wrangler secret put` (see .github/workflows/deploy-cloudflare.yml)
+# or in the Cloudflare dashboard under "Variables and Secrets" as Secrets
+# (encrypted) — those survive deploys; plain-text Variables set in the
+# dashboard are REPLACED by the [vars] block below on each `wrangler deploy`.
 [vars]
 NODE_ENV = "production"
+DOMAIN = "CODEWIX.IN"
+NEXT_PUBLIC_SITE_URL = "https://codewix.in"
+GEMINI_DEFAULT_MODEL = "gemini-3.6-flash"
+RESEND_FROM_EMAIL = "CodeWIX <noreply@codewix.in>"
