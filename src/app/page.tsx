@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import dynamic from "next/dynamic";
 import Sidebar from "@/components/codewix/Sidebar";
 import Header from "@/components/codewix/Header";
@@ -14,15 +13,13 @@ const Background3D = dynamic(
 );
 
 export default function CodeWIXPage() {
-  const [activeTab, setActiveTab] = useState("chat");
-
   return (
     <div className="flex h-screen overflow-hidden">
       {/* 3D Background */}
       <Background3D />
 
       {/* Sidebar */}
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Sidebar />
 
       {/* Main Content */}
       <main className="relative flex-1 flex flex-col min-w-0 overflow-hidden">

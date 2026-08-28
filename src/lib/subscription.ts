@@ -60,7 +60,18 @@ export async function getUserPlan(userId: string): Promise<Plan | null> {
 
 export async function canCreateProject(userId: string): Promise<{ allowed: boolean; reason?: string }> {
   const sub = await getUserSubscription(userId);
-  if (!sub) return { allowed: false, reason: 'No active subscription' };
+  // Free users (no active sub) can create up to 1 project
+  if (!sub) {
+    const supabase = createServiceClient();
+    const { count } = await supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    if ((count ?? 0) >= 1) {
+      return { allowed: false, reason: 'Free plan allows 1 project. Upgrade to create more.' };
+    }
+    return { allowed: true };
+  }
 
   const supabase = createServiceClient();
   const { count } = await supabase

@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquare, Bot, LayoutGrid, Settings, History, LogOut, Hammer, CreditCard, Zap } from 'lucide-react';
+import { MessageSquare, Bot, LayoutGrid, Settings, History, LogOut, Hammer, CreditCard, Zap, ArrowLeft } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useUser } from '@/components/Providers';
@@ -134,6 +134,24 @@ function TokenIndicator() {
   );
 }
 
+function TopBar() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const isHome = pathname === '/chat' || pathname === '/agent' || pathname === '/build';
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100/60 bg-white/40 backdrop-blur-sm flex-shrink-0">
+      {!isHome && (
+        <button onClick={() => router.back()} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all" title="Go back">
+          <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
+        </button>
+      )}
+      <span className="text-[13px] font-medium text-slate-400 capitalize">
+        {pathname.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') || 'Dashboard'}
+      </span>
+    </div>
+  );
+}
+
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
   const router = useRouter();
@@ -154,7 +172,10 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     <div className="flex h-screen overflow-hidden">
       <Background3D />
       <SidebarNav />
-      <main className="relative flex-1 flex flex-col min-w-0 overflow-hidden">{children}</main>
+      <main className="relative flex-1 flex flex-col min-w-0 overflow-hidden">
+        <TopBar />
+        <div className="flex-1 overflow-hidden">{children}</div>
+      </main>
     </div>
   );
 }

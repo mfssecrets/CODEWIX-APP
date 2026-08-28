@@ -30,7 +30,7 @@ export async function getAvailableTokens(userId: string): Promise<number> {
       .eq('user_id', userId)
       .eq('status', 'active')
       .single();
-    const monthlyTokens = (data as any)?.plans?.monthly_tokens ?? 50;
+    const monthlyTokens = (sub as any)?.plans?.monthly_tokens ?? 50;
     await supabase
       .from('token_balances')
       .update({

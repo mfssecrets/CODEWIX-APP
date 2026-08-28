@@ -40,10 +40,14 @@ export default function PricingPage() {
         body: JSON.stringify({ planId }),
       });
       const data = await res.json();
-      if (data?.razorpayOrder) {
+      if (data?.orderId) {
         const options: any = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          ...data.razorpayOrder,
+          key: data.key,
+          order_id: data.orderId,
+          amount: data.amount,
+          currency: data.currency,
+          name: 'CodeWIX',
+          description: data.planName || 'Subscription',
           handler: function (response: any) {
             window.location.href = '/pricing?success=true';
           },

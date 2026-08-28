@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const publicPaths = ['/', '/signin', '/signup', '/forgot-password', '/pricing'];
 const publicApiPrefixes = ['/api/auth/callback', '/api/billing/plans'];
-const protectedPrefixes = ['/(workspace)', '/(ide)'];
+// Route groups (workspace), (ide) don't appear in URLs
+const protectedPrefixes = ['/chat', '/agent', '/build', '/history', '/settings'];
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -44,8 +45,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/chat', request.url));
   }
 
-  // Protect workspace and IDE routes
-  const isProtected = protectedPrefixes.some((p) => pathname.startsWith(p));
+  // Protect workspace routes
+  const isProtected = protectedPrefixes.some((p) => pathname === p || pathname.startsWith(p + '/'));
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
     url.pathname = '/signin';

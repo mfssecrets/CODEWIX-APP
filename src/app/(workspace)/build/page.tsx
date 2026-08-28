@@ -67,7 +67,7 @@ export default function BuildPage() {
       setShowModal(false);
       setModalName('');
       setModalDesc('');
-      router.push(`/build/${data.id}`);
+      router.push(`/build/${data.project.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create project');
     } finally {

@@ -1,30 +1,38 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   MessageSquare, Bot, Plus, LayoutGrid,
-  Settings, ChevronLeft, ChevronRight,
+  Settings, ChevronLeft, ChevronRight, Hammer,
 } from "lucide-react";
 import Image from 'next/image';
-
-interface SidebarProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
-}
+import { useUser } from '@/components/Providers';
 
 const mainNav = [
-  { id: "chat", label: "Chat", icon: MessageSquare },
-  { id: "agent", label: "Agent", icon: Bot },
+  { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
+  { id: "agent", label: "Agent", icon: Bot, path: "/agent" },
+  { id: "build", label: "Build", icon: Hammer, path: "/build" },
 ];
 
 const secondaryNav = [
-  { id: "new-project", label: "New Project", icon: Plus },
-  { id: "templates", label: "AI Templates", icon: LayoutGrid },
+  { id: "new-project", label: "New Project", icon: Plus, path: "/build" },
+  { id: "templates", label: "AI Templates", icon: LayoutGrid, path: "/build" },
 ];
 
-export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const router = useRouter();
+  const { user, loading } = useUser();
+
+  const handleNav = (path: string) => {
+    if (user) {
+      router.push(path);
+    } else {
+      router.push(`/signin?redirectTo=${encodeURIComponent(path)}`);
+    }
+  };
 
   return (
     <motion.aside
@@ -36,7 +44,10 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       }`}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-200/50">
+      <div
+        className="flex items-center gap-3 px-5 py-5 border-b border-slate-200/50 cursor-pointer"
+        onClick={() => router.push('/')}
+      >
         <div className="w-9 h-9 rounded-xl overflow-hidden shadow-lg shadow-purple-500/20 flex-shrink-0">
           <Image src="/logo.png" alt="CodeWIX" width={36} height={36} className="object-cover" />
         </div>
@@ -54,39 +65,18 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
 
       {/* Main Nav */}
       <nav className="flex flex-col gap-1 px-3 pt-5">
-        {mainNav.map((item) => {
-          const isActive = activeTab === item.id;
-          return (
-            <motion.button
-              key={item.id}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => onTabChange(item.id)}
-              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium transition-all duration-200 ${
-                isActive
-                  ? "bg-purple-50 text-violet-700"
-                  : "text-slate-500 hover:bg-slate-100/70 hover:text-slate-700"
-              }`}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute inset-0 rounded-xl bg-purple-50/80"
-                  transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
-                />
-              )}
-              <item.icon
-                className={`relative z-10 w-[18px] h-[18px] ${
-                  isActive ? "text-violet-600" : ""
-                }`}
-                strokeWidth={1.8}
-              />
-              {!collapsed && (
-                <span className="relative z-10">{item.label}</span>
-              )}
-            </motion.button>
-          );
-        })}
+        {mainNav.map((item) => (
+          <motion.button
+            key={item.id}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleNav(item.path)}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-slate-500 hover:bg-slate-100/70 hover:text-slate-700 transition-all duration-200"
+          >
+            <item.icon className="w-[18px] h-[18px]" strokeWidth={1.8} />
+            {!collapsed && <span>{item.label}</span>}
+          </motion.button>
+        ))}
       </nav>
 
       {/* Separator */}
@@ -99,7 +89,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
             key={item.id}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => onTabChange(item.id)}
+            onClick={() => handleNav(item.path)}
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-slate-500 hover:bg-slate-100/70 hover:text-slate-700 transition-all duration-200"
           >
             <item.icon className="w-[18px] h-[18px]" strokeWidth={1.8} />
@@ -116,6 +106,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
+          onClick={() => handleNav('/settings/models')}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-slate-500 hover:bg-slate-100/70 hover:text-slate-700 transition-all duration-200 w-full"
         >
           <Settings className="w-[18px] h-[18px]" strokeWidth={1.8} />

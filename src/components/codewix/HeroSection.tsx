@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import { ArrowUp, Plus, Code2, Play, Globe, Database, Layers, PenTool, LineChart, MessageCircle } from "lucide-react";
+import { useUser } from "@/components/Providers";
 
 const actionChips = [
   { id: "im", label: "IM", icon: MessageCircle, color: "violet" },
@@ -21,6 +23,17 @@ const floatingItems = [
 export default function HeroSection() {
   const [activeChip, setActiveChip] = useState("im");
   const [inputValue, setInputValue] = useState("");
+  const router = useRouter();
+  const { user } = useUser();
+
+  const handleSubmit = () => {
+    if (!inputValue.trim()) return;
+    if (!user) {
+      router.push(`/signup?redirectTo=${encodeURIComponent('/chat')}%26prompt=${encodeURIComponent(inputValue.trim())}`);
+      return;
+    }
+    router.push(`/chat?prompt=${encodeURIComponent(inputValue.trim())}`);
+  };
 
   return (
     <section className="relative flex flex-col items-center justify-center px-6 pt-8 pb-4 min-h-[480px]">
@@ -92,12 +105,14 @@ export default function HeroSection() {
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
               placeholder="Describe the website or app you want to build..."
               className="flex-1 bg-transparent text-[14px] text-slate-700 placeholder:text-slate-400 outline-none"
             />
             <motion.button
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
+              onClick={handleSubmit}
               className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/35 transition-shadow duration-300"
             >
               <ArrowUp className="w-4 h-4" strokeWidth={2.2} />
