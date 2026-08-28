@@ -38,9 +38,11 @@ NEXT_PUBLIC_SITE_URL=https://codewix.in
 DOMAIN=CODEWIX.IN
 NODE_ENV=production
 
-# ---- Razorpay (billing) — required only to enable paid plans ----
-# RAZORPAY_KEY_ID=YOUR_RAZORPAY_KEY_ID
-# RAZORPAY_KEY_SECRET=YOUR_RAZORPAY_KEY_SECRET
+# ---- Razorpay (billing) — LIVE keys ----
+# Set these as Cloudflare secrets (encrypted). The key_id is also returned to
+# the browser for Razorpay checkout; the key_secret stays server-only.
+RAZORPAY_KEY_ID=YOUR_RAZORPAY_LIVE_KEY_ID
+RAZORPAY_KEY_SECRET=YOUR_RAZORPAY_LIVE_KEY_SECRET
 
 # ---- Encryption (legacy per-user key obfuscation; keep a stable 32-char value) ----
 ENCRYPTION_KEY=your-32-char-encryption-key

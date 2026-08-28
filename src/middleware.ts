@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const publicPaths = ['/', '/signin', '/signup', '/forgot-password', '/pricing'];
+const publicPaths = ['/', '/signin', '/signup', '/pricing'];
 const publicApiPrefixes = ['/api/auth/callback', '/api/billing/plans'];
 // Route groups (workspace), (ide) don't appear in URLs
 const protectedPrefixes = ['/chat', '/agent', '/build', '/history', '/settings'];

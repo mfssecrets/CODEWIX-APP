@@ -27,6 +27,8 @@ export default function SignupPage() {
     setError('');
     setSending(true);
     try {
+      // Pure 6-digit email OTP — NO magic link. Supabase sends the code
+      // because the email template uses {{ .Token }} (not {{ .ConfirmationURL }}).
       const { error: err } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
@@ -97,6 +99,7 @@ export default function SignupPage() {
     setError('');
     setSending(true);
     try {
+      // Pure 6-digit email OTP resend — NO magic link.
       const { error: err } = await supabase.auth.resend({
         type: 'email',
         email: email.trim(),
@@ -164,7 +167,7 @@ export default function SignupPage() {
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="mt-6 pt-4 border-t border-slate-200/50">
+      <div className="mt-6 pt-4 border-t border-slate-200/50 flex items-center justify-center">
         <p className="text-center text-[13px] text-slate-500">Already have an account? <Link href="/signin" className="font-medium text-violet-600 hover:text-violet-700 transition-colors">Sign in</Link></p>
       </div>
     </AuthCard>

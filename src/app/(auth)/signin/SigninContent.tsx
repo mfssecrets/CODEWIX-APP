@@ -27,6 +27,8 @@ export default function SigninContent() {
     setError('');
     setSending(true);
     try {
+      // Pure 6-digit email OTP — NO magic link. Supabase sends the code
+      // because the email template uses {{ .Token }} (not {{ .ConfirmationURL }}).
       const { error: err } = await supabase.auth.signInWithOtp({
         email: email.trim(),
       });
@@ -83,6 +85,7 @@ export default function SigninContent() {
     setError('');
     setSending(true);
     try {
+      // Pure 6-digit email OTP resend — NO magic link.
       const { error: err } = await supabase.auth.resend({
         type: 'email',
         email: email.trim(),
@@ -91,7 +94,7 @@ export default function SigninContent() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to resend');
     } finally { setSending(false); }
-  }, [email, redirectTo, supabase]);
+  }, [email, supabase]);
 
   return (
     <AuthCard subtitle="Sign in to your account">
@@ -142,9 +145,8 @@ export default function SigninContent() {
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="mt-6 pt-4 border-t border-slate-200/50 flex items-center justify-between">
+      <div className="mt-6 pt-4 border-t border-slate-200/50 flex items-center justify-center">
         <Link href="/signup" className="text-[13px] font-medium text-violet-600 hover:text-violet-700 transition-colors">Create account</Link>
-        <Link href="/forgot-password" className="text-[13px] text-slate-500 hover:text-slate-700 transition-colors">Forgot password?</Link>
       </div>
     </AuthCard>
   );
