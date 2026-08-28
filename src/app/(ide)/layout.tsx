@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { useUser } from '@/components/Providers';
 import { SkeletonPage } from '@/components/skeleton/SkeletonCard';
 
@@ -16,5 +17,16 @@ export default function IdeLayout({ children }: { children: React.ReactNode }) {
   if (loading) return <SkeletonPage />;
   if (!user) return null;
 
-  return <div className="h-screen w-screen overflow-hidden">{children}</div>;
+  return (
+    <div className="relative h-screen w-screen overflow-hidden">
+      <button
+        onClick={() => router.push('/build')}
+        className="absolute top-3 left-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/80 backdrop-blur-sm border border-slate-200/60 text-[13px] font-medium text-slate-600 hover:bg-white hover:text-slate-800 shadow-sm hover:shadow-md transition-all duration-200"
+      >
+        <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
+        <span>Projects</span>
+      </button>
+      {children}
+    </div>
+  );
 }

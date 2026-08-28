@@ -29,9 +29,6 @@ export default function SigninContent() {
     try {
       const { error: err } = await supabase.auth.signInWithOtp({
         email: email.trim(),
-        options: {
-          emailRedirectTo: `${window.location.origin}/api/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
-        },
       });
       if (err) throw err;
       setStep(2);
@@ -89,9 +86,6 @@ export default function SigninContent() {
       const { error: err } = await supabase.auth.resend({
         type: 'email',
         email: email.trim(),
-        options: {
-          emailRedirectTo: `${window.location.origin}/api/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
-        },
       });
       if (err) throw err;
     } catch (err: unknown) {

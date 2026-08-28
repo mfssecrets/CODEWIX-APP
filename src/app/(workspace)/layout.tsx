@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { MessageSquare, Bot, LayoutGrid, Settings, History, LogOut, Hammer, CreditCard, Zap, ArrowLeft } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useUser } from '@/components/Providers';
 import { SkeletonPage, SkeletonSidebar, Skeleton } from '@/components/skeleton/SkeletonCard';
 
@@ -155,8 +156,12 @@ function TopBar() {
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
   const router = useRouter();
+  const pathname = usePathname();
+  const isPricingPage = pathname === '/pricing';
 
-  useEffect(() => { if (!loading && !user) router.push('/signin'); }, [loading, user, router]);
+  useEffect(() => {
+    if (!loading && !user && !isPricingPage) router.push('/signin');
+  }, [loading, user, router, isPricingPage]);
 
   if (loading) {
     return (
@@ -166,6 +171,26 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       </div>
     );
   }
+
+  // Guest accessing pricing page — show minimal layout without sidebar
+  if (!user && isPricingPage) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200/50">
+          <div className="flex items-center gap-2">
+            <Image src="/logo.png" alt="CodeWIX" width={28} height={28} className="rounded-lg" />
+            <span className="text-[15px] font-semibold text-slate-800">CodeWIX</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link href="/signin" className="text-[13px] font-medium text-slate-600 hover:text-violet-600 transition-colors">Sign in</Link>
+            <Link href="/signup" className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[13px] font-medium hover:shadow-lg hover:shadow-violet-500/25 transition-all">Get Started</Link>
+          </div>
+        </div>
+        {children}
+      </div>
+    );
+  }
+
   if (!user) return null;
 
   return (

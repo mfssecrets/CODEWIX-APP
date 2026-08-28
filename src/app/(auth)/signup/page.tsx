@@ -30,7 +30,6 @@ export default function SignupPage() {
       const { error: err } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
-          emailRedirectTo: `${window.location.origin}/api/auth/callback`,
           data: { name: name.trim() },
         },
       });
@@ -95,7 +94,6 @@ export default function SignupPage() {
       const { error: err } = await supabase.auth.resend({
         type: 'email',
         email: email.trim(),
-        options: { emailRedirectTo: `${window.location.origin}/api/auth/callback` },
       });
       if (err) throw err;
     } catch (err: unknown) {
