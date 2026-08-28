@@ -1,6 +1,5 @@
 import { encrypt, decrypt } from './crypto';
-import { db } from './db';
-import { Prisma } from '@prisma/client';
+import { createServiceClient } from './supabase/server';
 
 export interface AIProvider {
   provider: string;
@@ -24,83 +23,118 @@ function getModelMeta(modelId: string): { supportsVision: boolean; supportsStrea
  return { supportsVision: false, supportsStreaming: true };
 }
 
+async function modelRowToAI(c: { id: string; user_id: string; provider: string; model_id: string; display_name: string; api_key: string; is_default: boolean; enabled: boolean }): Promise<AIProvider> {
+  const meta = getModelMeta(c.model_id);
+  return {
+    provider: c.provider,
+    modelId: c.model_id,
+    displayName: c.display_name,
+    apiKey: decrypt(c.api_key),
+    supportsVision: meta.supportsVision,
+    supportsStreaming: meta.supportsStreaming,
+  };
+}
+
 export async function getEnabledModels(userId: string): Promise<AIProvider[]> {
- const configs = await db.modelConfig.findMany({ where: { userId, enabled: true } });
- return configs.map((c) => {
- const meta = getModelMeta(c.modelId);
- return {
-   provider: c.provider,
-   modelId: c.modelId,
-   displayName: c.displayName,
-   apiKey: decrypt(c.apiKey),
-   supportsVision: meta.supportsVision,
-   supportsStreaming: meta.supportsStreaming,
- };
- });
+  const db = createServiceClient();
+  const { data: configs, error } = await db
+    .from('model_configs')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('enabled', true);
+  if (error) throw new Error(`Failed to fetch models: ${error.message}`);
+  return Promise.all((configs ?? []).map(modelRowToAI));
 }
 
 export async function getDefaultModel(userId: string): Promise<AIProvider | null> {
- const configs = await db.modelConfig.findMany({ where: { userId, enabled: true } });
- const defaultCfg = configs.find((c) => c.isDefault) || configs[0];
- if (!defaultCfg) return null;
- const meta = getModelMeta(defaultCfg.modelId);
- return {
-   provider: defaultCfg.provider,
-   modelId: defaultCfg.modelId,
-   displayName: defaultCfg.displayName,
-   apiKey: decrypt(defaultCfg.apiKey),
-   supportsVision: meta.supportsVision,
-   supportsStreaming: meta.supportsStreaming,
- };
+  const db = createServiceClient();
+  const { data: configs, error } = await db
+    .from('model_configs')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('enabled', true);
+  if (error) throw new Error(`Failed to fetch default model: ${error.message}`);
+  const rows = configs ?? [];
+  const defaultCfg = rows.find((c) => c.is_default) || rows[0];
+  if (!defaultCfg) return null;
+  return modelRowToAI(defaultCfg);
 }
 
 export async function getModelById(userId: string, modelConfigId: string): Promise<AIProvider | null> {
- const c = await db.modelConfig.findFirst({ where: { id: modelConfigId, userId } });
- if (!c) return null;
- const meta = getModelMeta(c.modelId);
- return {
-   provider: c.provider,
-   modelId: c.modelId,
-   displayName: c.displayName,
-   apiKey: decrypt(c.apiKey),
-   supportsVision: meta.supportsVision,
-   supportsStreaming: meta.supportsStreaming,
- };
+  const db = createServiceClient();
+  const { data: c, error } = await db
+    .from('model_configs')
+    .select('*')
+    .eq('id', modelConfigId)
+    .eq('user_id', userId)
+    .single();
+  if (error || !c) return null;
+  return modelRowToAI(c);
 }
 
 export async function saveModelConfig(data: {
- userId: string;
- provider: string;
- apiKey: string;
- modelId: string;
- displayName: string;
- isDefault?: boolean;
+  userId: string;
+  provider: string;
+  apiKey: string;
+  modelId: string;
+  displayName: string;
+  isDefault?: boolean;
 }) {
- const encrypted = encrypt(data.apiKey);
- if (data.isDefault) {
-   await db.modelConfig.updateMany({ where: { userId: data.userId, isDefault: true }, data: { isDefault: false } });
- }
- return db.modelConfig.create({
-   data: {
-     userId: data.userId,
-     provider: data.provider,
-     apiKey: encrypted,
-     modelId: data.modelId,
-     displayName: data.displayName,
-     isDefault: data.isDefault || false,
-   },
- });
+  const db = createServiceClient();
+  const encrypted = encrypt(data.apiKey);
+  if (data.isDefault) {
+    await db
+      .from('model_configs')
+      .update({ is_default: false })
+      .eq('user_id', data.userId)
+      .eq('is_default', true);
+  }
+  const { data: row, error } = await db
+    .from('model_configs')
+    .insert({
+      user_id: data.userId,
+      provider: data.provider,
+      api_key: encrypted,
+      model_id: data.modelId,
+      display_name: data.displayName,
+      is_default: data.isDefault || false,
+      enabled: true,
+    })
+    .select('id')
+    .single();
+  if (error) throw new Error(`Failed to save model: ${error.message}`);
+  return row;
 }
 
 export async function deleteModelConfig(userId: string, modelId: string) {
- return db.modelConfig.deleteMany({ where: { id: modelId, userId } });
+  const db = createServiceClient();
+  const { error } = await db
+    .from('model_configs')
+    .delete()
+    .eq('id', modelId)
+    .eq('user_id', userId);
+  if (error) throw new Error(`Failed to delete model: ${error.message}`);
 }
 
 export async function updateModelConfig(userId: string, modelId: string, data: { enabled?: boolean; isDefault?: boolean; displayName?: string }) {
- if (data.isDefault) {
-   await db.modelConfig.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } });
- }
- return db.modelConfig.updateMany({ where: { id: modelId, userId }, data });
+  const db = createServiceClient();
+  if (data.isDefault) {
+    await db
+      .from('model_configs')
+      .update({ is_default: false })
+      .eq('user_id', userId)
+      .eq('is_default', true);
+  }
+  const updateData: Record<string, unknown> = {};
+  if (data.enabled !== undefined) updateData.enabled = data.enabled;
+  if (data.isDefault !== undefined) updateData.is_default = data.isDefault;
+  if (data.displayName !== undefined) updateData.display_name = data.displayName;
+  const { error } = await db
+    .from('model_configs')
+    .update(updateData)
+    .eq('id', modelId)
+    .eq('user_id', userId);
+  if (error) throw new Error(`Failed to update model: ${error.message}`);
 }
 
 async function* streamGoogle(model: AIProvider, messages: { role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }[]): AsyncGenerator<string> {
@@ -154,13 +188,13 @@ async function* streamGoogle(model: AIProvider, messages: { role: string; conten
   }
 }
 
-async function* streamGroq(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
+async function* streamOpenAICompatible(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>, baseUrl: string): AsyncGenerator<string> {
   const cleaned = messages.map((m) => ({
     role: m.role,
     content: typeof m.content === 'string' ? m.content : (m.content as Array<{ type: string; text?: string }>).map((p) => p.text || '').join('\n'),
   }));
 
-  const url = `${PROVIDER_META.groq.baseUrl}/chat/completions`;
+  const url = `${baseUrl}/chat/completions`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
@@ -169,7 +203,7 @@ async function* streamGroq(model: AIProvider, messages: Array<{ role: string; co
 
   if (!res.ok) {
     const err = await res.text().catch(() => '');
-    throw new Error(`Groq API error (${res.status}): ${err}`);
+    throw new Error(`API error (${res.status}): ${err}`);
   }
 
   const reader = res.body?.getReader();
@@ -196,46 +230,12 @@ async function* streamGroq(model: AIProvider, messages: Array<{ role: string; co
   }
 }
 
+async function* streamGroq(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
+  yield* streamOpenAICompatible(model, messages, PROVIDER_META.groq.baseUrl);
+}
+
 async function* streamZai(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
-  const cleaned = messages.map((m) => ({
-    role: m.role,
-    content: typeof m.content === 'string' ? m.content : (m.content as Array<{ type: string; text?: string }>).map((p) => p.text || '').join('\n'),
-  }));
-
-  const url = `${PROVIDER_META.zai.baseUrl}/chat/completions`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
-    body: JSON.stringify({ model: model.modelId, messages: cleaned, stream: true, temperature: 0.7, max_tokens: 8192 }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`Z.ai API error (${res.status}): ${err}`);
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('No response body');
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const jsonStr = line.slice(6).trim();
-      if (jsonStr === '[DONE]') return;
-      try {
-        const parsed = JSON.parse(jsonStr);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) yield delta;
-      } catch { /* skip */ }
-    }
-  }
+  yield* streamOpenAICompatible(model, messages, PROVIDER_META.zai.baseUrl);
 }
 
 export function streamChat(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {

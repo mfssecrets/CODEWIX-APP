@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
           const { readFile } = await import('fs/promises');
           const { join } = await import('path');
           try {
-            const b64 = await readFile(join(process.cwd(), a.filePath), 'base64');
+            const b64 = await readFile(join(/*turbopackIgnore: true*/ process.cwd(), a.filePath), 'base64');
             parts.push({ type: 'image_url', image_url: { url: `data:${a.mimeType};base64,${b64}` } });
           } catch { /* skip */ }
         } else {
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
           try {
             const { readFile } = await import('fs/promises');
             const { join } = await import('path');
-            text = await readFile(join(process.cwd(), a.filePath), 'utf-8');
+            text = await readFile(join(/*turbopackIgnore: true*/ process.cwd(), a.filePath), 'utf-8');
           } catch { text = `[Could not read ${a.fileName}]`; }
           parts.push({ type: 'text', text: `--- Document: ${a.fileName} ---\n${text.slice(0, 30000)}` });
         }

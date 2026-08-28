@@ -7,7 +7,7 @@ import { MessageSquare, Bot, LayoutGrid, Settings, History, LogOut, Hammer, Cred
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useUser } from '@/components/Providers';
-import { SkeletonPage, SkeletonSidebar } from '@/components/skeleton/SkeletonCard';
+import { SkeletonPage, SkeletonSidebar, Skeleton } from '@/components/skeleton/SkeletonCard';
 
 const Background3D = dynamic(() => import('@/components/codewix/Background3D'), { ssr: false });
 
@@ -47,7 +47,7 @@ function SidebarNav() {
         )}
       </div>
 
-      {/* Token indicator */
+      {/* Token indicator */}
       {!collapsed && (
         <TokenIndicator />
       )}
