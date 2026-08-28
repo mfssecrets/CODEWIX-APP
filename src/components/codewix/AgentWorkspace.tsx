@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowUp, Plus, Paperclip, X, Loader2, FileText, AlertCircle, Square,
-  Play, CheckCircle2, Circle, Clock, Code2, Wrench, TestTube, Bug,
+  Play, CheckCircle2, Circle, Clock, Code2, Wrench, TestTube, Bug, Hammer,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -157,6 +157,37 @@ export default function AgentWorkspace() {
     }
   };
 
+  // "Build" button — create a new project from the prompt and open the
+  // Build Studio (the full in-browser IDE) with the prompt pre-loaded so the
+  // AI immediately starts generating files via tool-calls. This is the real
+  // "build a website/app" experience (Monaco editor + live preview + file
+  // tree), not a chat-style markdown response.
+  const [building, setBuilding] = useState(false);
+  const handleBuild = async () => {
+    if (!prompt.trim()) return;
+    setBuilding(true);
+    try {
+      // Derive a short project name from the prompt (first ~40 chars).
+      const projName = prompt.trim().slice(0, 60).replace(/\s+/g, ' ').trim() || 'New Project';
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: projName, description: prompt.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || 'Failed to create project');
+      }
+      const { project } = await res.json();
+      // Navigate to the Build Studio with the prompt auto-loaded.
+      router.push(`/build/${project.id}?prompt=${encodeURIComponent(prompt.trim())}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open Build Studio');
+    } finally {
+      setBuilding(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -191,7 +222,7 @@ export default function AgentWorkspace() {
               <Code2 className="w-7 h-7 text-violet-500" strokeWidth={1.5} />
             </div>
             <h3 className="text-[18px] font-semibold text-slate-700 mb-2">AI Coding Agent</h3>
-            <p className="text-[13.5px] text-slate-500 max-w-sm">Describe what you want to build. The agent will plan, create, and deliver a complete implementation.</p>
+            <p className="text-[13.5px] text-slate-500 max-w-sm">Describe what you want to build, then click <span className="font-semibold text-violet-600">Build</span> to open the Build Studio (full IDE with live preview) or <span className="font-semibold text-slate-600">Chat</span> for a markdown walkthrough.</p>
           </div>
         ) : (
           <div className="max-w-3xl mx-auto py-6 px-4 sm:px-6">
@@ -301,10 +332,17 @@ export default function AgentWorkspace() {
                   <Square className="w-3.5 h-3.5" fill="white" />
                 </button>
               ) : (
-                <button onClick={handleStart} disabled={!prompt.trim() && !attachments.some((a) => a.filePath)}
-                  className="flex-shrink-0 flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-gradient-to-br from-violet-600 to-purple-600 text-white text-[13px] font-semibold shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/35 disabled:opacity-40 disabled:shadow-none transition-all duration-200">
-                  <Play className="w-3.5 h-3.5" fill="white" /> Start
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={handleStart} disabled={!prompt.trim() && !attachments.some((a) => a.filePath)}
+                    className="flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-xl bg-white/80 text-slate-600 text-[13px] font-semibold border border-slate-200/60 hover:bg-slate-50 disabled:opacity-40 transition-all duration-200">
+                    <Play className="w-3.5 h-3.5" /> Chat
+                  </button>
+                  <button onClick={handleBuild} disabled={!prompt.trim() || building}
+                    className="flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-gradient-to-br from-violet-600 to-purple-600 text-white text-[13px] font-semibold shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/35 disabled:opacity-40 disabled:shadow-none transition-all duration-200">
+                    {building ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Hammer className="w-3.5 h-3.5" />}
+                    {building ? 'Opening...' : 'Build'}
+                  </button>
+                </div>
               )}
             </div>
           </div>

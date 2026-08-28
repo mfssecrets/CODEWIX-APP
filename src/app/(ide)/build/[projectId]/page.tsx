@@ -9,7 +9,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import ReactMarkdown from 'react-markdown';
@@ -484,8 +484,13 @@ function MarkdownRenderer({ content }: { content: string }) {
 export default function BuilderIDEPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const projectId = params.projectId as string;
   const isMobile = useIsMobile();
+  // Initial prompt passed from the Agent workspace ("Build" button) or landing
+  // hero. When present, it auto-fills the AI input and triggers send once
+  // models are loaded. Consumed exactly once.
+  const initialPrompt = searchParams.get('prompt');
 
   // ── State ────────────────────────────────────────────────────────
   const [project, setProject] = useState<{ name: string; description?: string } | null>(null);
@@ -576,6 +581,20 @@ export default function BuilderIDEPage() {
       })
       .catch(() => {});
   }, []);
+
+  // Auto-send the initial prompt (passed via ?prompt= from the Agent "Build"
+  // button or the landing hero) once models are loaded. Consumed once.
+  const initialPromptSentRef = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || initialPromptSentRef.current) return;
+    if (models.length === 0) return; // wait for models to load
+    if (streaming) return;
+    initialPromptSentRef.current = true;
+    setInput(initialPrompt);
+    // Defer the send so React commits the input state before handleSend reads it.
+    const t = setTimeout(() => { handleSendRef.current?.(); }, 50);
+    return () => clearTimeout(t);
+  }, [initialPrompt, models, streaming]);
 
   // Fetch files
   const fetchFiles = useCallback(async () => {
@@ -874,6 +893,10 @@ export default function BuilderIDEPage() {
 
   // ── AI Chat ──────────────────────────────────────────────────────
 
+  // Keep a ref to the latest handleSend so the initial-prompt effect can call
+  // it without re-running on every input change.
+  const handleSendRef = useRef<(() => Promise<void>) | null>(null);
+
   const handleSend = useCallback(async () => {
     const prompt = input.trim();
     if (!prompt || streaming) return;
@@ -1022,6 +1045,12 @@ export default function BuilderIDEPage() {
       setAttachments([]);
     }
   }, [input, streaming, selectedModel, conversationId, attachments, projectId, fetchFiles]);
+
+  // Keep handleSendRef in sync so the initial-prompt effect can call the
+  // latest handleSend without listing it as a dependency.
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
