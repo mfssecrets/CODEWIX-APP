@@ -1,0 +1,220 @@
+// =============================================================
+// Cloudflare-compatible Prisma schema (PostgreSQL)
+// =============================================================
+//
+// Cloudflare Workers don't have a filesystem, so SQLite won't work.
+// Use this schema with an external PostgreSQL database.
+//
+// Recommended DB providers for Cloudflare:
+//   1. Neon (serverless Postgres) — Free: 0.5GB, 100 compute hrs/mo
+//   2. Supabase (Postgres + Auth + Storage) — Free: 500MB
+//   3. Turso (edge SQLite) — Free: 9GB, uses @prisma/adapter-libsql
+//
+// To switch: rename this to schema.prisma, then:
+//   npx prisma generate
+//   npx prisma db push
+// =============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations         Conversation[]
+  modelConfigs           ModelConfig[]
+  accounts               Account[]
+  sessions               Session[]
+  projects               Project[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Conversation {
+  id           String   @id @default(cuid())
+  userId       String
+  type         String   @default("chat")
+  title        String   @default("New Conversation")
+  modelId      String?
+  provider     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   Message[]
+  agentTasks AgentTask[]
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String   @default("")
+  timestamp      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments   Attachment[]
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  messageId  String
+  fileName   String
+  filePath   String
+  fileType   String
+  fileSize   Int
+  mimeType   String
+  createdAt  DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model AgentTask {
+  id             String   @id @default(cuid())
+  conversationId String
+  status         String   @default("planning")
+  activity       String   @default("Planning")
+  output         String   @default("")
+  files          String   @default("{}")
+  buildStatus    String   @default("pending")
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model ModelConfig {
+  id          String   @id @default(cuid())
+  userId      String
+  provider    String
+  apiKey      String
+  modelId     String
+  displayName String
+  enabled     Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  purpose   String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  githubRepo  String?
+  githubBranch String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files     ProjectFile[]
+  versions  ProjectVersion[]
+  conversations BuilderConversation[]
+}
+
+model ProjectFile {
+  id        String   @id @default(cuid())
+  projectId String
+  path      String
+  content   String   @default("")
+  language  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path])
+}
+
+model ProjectVersion {
+  id        String   @id @default(cuid())
+  projectId String
+  label     String
+  files     String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model BuilderConversation {
+  id             String   @id @default(cuid())
+  projectId      String
+  title          String   @default("New Conversation")
+  modelId        String?
+  provider       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages BuilderMessage[]
+}
+
+model BuilderMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String   @default("")
+  activity       String?
+  timestamp      DateTime @default(now())
+
+  conversation BuilderConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}

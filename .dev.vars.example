@@ -1,0 +1,18 @@
+# Cloudflare Worker Environment Variables (local dev)
+# Copy this to .dev.vars for local wrangler development
+# For production, set secrets via: wrangler secret put <KEY>
+
+# Auth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-secret-here-generate-with-openssl-rand-base64-32
+
+# Database (when using external DB)
+# DATABASE_URL=postgresql://user:pass@host:5432/codewix
+
+# Encryption
+ENCRYPTION_KEY=your-32-char-encryption-key
+
+# AI Provider API Keys (set via wrangler secret put for production)
+# GEMINI_API_KEY=
+# ZAI_API_KEY=
+# GROQ_API_KEY=

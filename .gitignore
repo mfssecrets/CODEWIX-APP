@@ -1,0 +1,76 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+
+# Cloudflare
+.open-next/
+.wrangler/
+.dev.vars
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database
+*.db
+*.db-journal
+db/
+
+# Build logs
+*.log
+dev.log
+server.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/
+upload/
+
+# Tool results
+tool-results/
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel
+.vercel
+
+# Turbo
+.turbo
+
+# Coverage
+coverage/
+
+# Misc
+*.tsbuildinfo
+next-env.d.ts
+
+# Internal tooling (not part of app)
+.zscripts/
+download/
+examples/
+tests/
+mini-services/
+skills/
+Caddyfile
+worklog.md
+*.pid

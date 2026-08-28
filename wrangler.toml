@@ -1,0 +1,46 @@
+name = "codewix-app"
+main = ".open-next/worker.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+assets = {
+  directory = ".open-next/assets",
+  binding = "ASSETS"
+}
+
+# Environment variables (set secrets via `wrangler secret put` or dashboard)
+[vars]
+NODE_ENV = "production"
+NEXTAUTH_URL = "https://codewix-app.pages.dev"
+NEXTAUTH_SECRET = ""
+
+# D1 Database binding (uncomment when ready)
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "codewix-db"
+# database_id = "your-database-id"
+
+# R2 Storage binding for file uploads (uncomment when ready)
+# [[r2_buckets]]
+# binding = "STORAGE"
+# bucket_name = "codewix-uploads"
+
+# KV Namespace for sessions/cache (uncomment when ready)
+# [[kv_namespaces]]
+# binding = "KV"
+# id = "your-kv-id"
+
+# Production environment
+[env.production]
+name = "codewix-app"
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+# Staging environment
+[env.staging]
+name = "codewix-app-staging"
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+# Development (local wrangler)
+[env.dev]
+name = "codewix-app-dev"
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
