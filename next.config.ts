@@ -1,6 +1,11 @@
 import type { NextConfig} from "next";
 
 const nextConfig: NextConfig = {
+  // Cloudflare Pages deploys the Next.js standalone server. This produces
+  // .next/standalone/ which the build script then augments with static assets
+  // and the public folder.
+  output: "standalone",
+
   typescript: {
     ignoreBuildErrors: true,
   },
