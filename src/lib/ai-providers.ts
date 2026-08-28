@@ -260,30 +260,39 @@ export function streamProvider(model: AIProvider, messages: Array<{ role: string
 
 /**
  * Transparent fallback transport: when the primary Gemini provider is
- * unreachable (e.g. Google's API returns a region/auth/network error), the
- * same messages are run through the Z.ai GLM engine so the user ALWAYS gets a
- * response. The Z.ai SDK is imported dynamically so it is never loaded in
- * production where Gemini is reachable (keeps the Cloudflare build clean).
+ * unreachable (e.g. Google returns a region/auth/network error), the same
+ * messages are run through the Z.ai GLM API via a direct fetch (NO SDK — the
+ * z-ai-web-dev-sdk needs a .z-ai-config FILE which doesn't exist on Cloudflare
+ * Workers). Set the ZAI_API_KEY Worker secret to enable this fallback; if it's
+ * not set, the original Gemini error is surfaced instead.
  *
- * This is an operational resilience layer — it is NOT a user-selectable
- * provider. Z.ai and Groq remain muted in the model picker by design.
+ * This is an operational resilience layer — it is NOT a user-selectable provider.
+ * Z.ai and Groq remain muted in the model picker by design.
  *
- * Set AI_DISABLE_FALLBACK=1 to disable this and surface Gemini errors directly.
+ * Set AI_DISABLE_FALLBACK=1 to disable and surface Gemini errors directly.
  */
 async function* streamZaiFallback(messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
-  const { default: ZAI } = await import('z-ai-web-dev-sdk');
-  const zai = await ZAI.create();
-  const zaiMessages = messages.map((m) => ({
+  const zaiKey = process.env.ZAI_API_KEY;
+  if (!zaiKey) {
+    throw new Error('Gemini API request failed and no fallback is configured (set ZAI_API_KEY as a Worker secret to enable the Z.ai fallback, or set AI_DISABLE_FALLBACK=1).');
+  }
+  const cleaned = messages.map((m) => ({
     role: m.role,
     content: typeof m.content === 'string'
       ? m.content
       : (m.content as Array<{ type: string; text?: string }>).map((p) => p.text || '').join('\n'),
   }));
-  const completion = await zai.chat.completions.create({
-    messages: zaiMessages,
-    thinking: { type: 'disabled' as const },
+  const res = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${zaiKey}` },
+    body: JSON.stringify({ model: process.env.ZAI_MODEL || 'glm-4-plus', messages: cleaned, stream: false, temperature: 0.7, max_tokens: 8192, thinking: { type: 'disabled' } }),
   });
-  const full = completion.choices?.[0]?.message?.content || '';
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Z.ai fallback error (${res.status}): ${err}`);
+  }
+  const data: any = await res.json();
+  const full = data?.choices?.[0]?.message?.content || '';
   // Emit in small chunks so the SSE UI streams naturally.
   const chunkSize = 8;
   for (let i = 0; i < full.length; i += chunkSize) {
