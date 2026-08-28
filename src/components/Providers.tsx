@@ -53,7 +53,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!supabase) {
-      setLoading(false);
+      // Defer setState out of the effect body to avoid cascading renders.
+      queueMicrotask(() => setLoading(false));
       return;
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

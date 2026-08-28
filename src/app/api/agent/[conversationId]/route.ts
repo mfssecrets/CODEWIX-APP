@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ conv
     .from('messages')
     .select('*')
     .eq('conversation_id', conversationId)
-    .order('timestamp', { ascending: true });
+    .order('created_at', { ascending: true });
 
   // Fetch attachments for messages
   const msgIds = (messages ?? []).map((m: { id: string }) => m.id);
@@ -38,6 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ conv
 
   const messagesWithAttachments = (messages ?? []).map((m: any) => ({
     ...m,
+    timestamp: m.created_at ?? m.timestamp,
     attachments: attachmentsMap.get(m.id) ?? [],
   }));
 

@@ -38,7 +38,7 @@ export async function GET(
       .from('builder_messages')
       .select('*')
       .eq('conversation_id', convoId)
-      .order('timestamp', { ascending: true });
+      .order('created_at', { ascending: true });
 
     return NextResponse.json({
       conversation: {
@@ -53,7 +53,7 @@ export async function GET(
           role: m.role,
           content: m.content,
           activity: m.activity,
-          timestamp: m.timestamp,
+          timestamp: m.created_at,
         })),
       },
     });

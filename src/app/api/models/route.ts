@@ -1,48 +1,62 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getEnabledModels } from '@/lib/ai-providers';
-import { maskApiKey } from '@/lib/crypto';
+import { getAvailableModels, getDefaultModelId, isPlatformAIConfigured } from '@/lib/ai-providers';
 
+/**
+ * GET /api/models
+ *
+ * Returns the platform-provided Gemini models. Users do NOT manage their own
+ * API keys — the operator's GEMINI_API_KEY powers every model in this list.
+ * The response is shaped to satisfy both the Chat/Agent pickers (which read
+ * `enabled`) and the Build IDE picker (which reads `configs` and filters by
+ * `enabled`, sending `id` as the model id).
+ *
+ * `api_key` is never exposed to the client (returned as null/masked).
+ */
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const userId = user.id;
 
-  const { data: configs } = await supabase
-    .from('model_configs')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+  const configured = isPlatformAIConfigured();
+  const defaultId = getDefaultModelId();
+  const models = getAvailableModels();
 
-  const masked = (configs ?? []).map((c) => ({
-    id: c.id,
-    user_id: c.user_id,
-    provider: c.provider,
-    model_id: c.model_id,
-    display_name: c.display_name,
-    is_default: c.is_default,
-    api_key: maskApiKey(c.api_key),
-    created_at: c.created_at,
-    updated_at: c.updated_at,
+  const configs = models.map((m) => ({
+    id: m.id,
+    provider: 'google',
+    modelId: m.id,
+    displayName: m.displayName,
+    description: m.description,
+    apiKey: null, // platform-managed, never sent to the client
+    enabled: configured,
+    isDefault: m.id === defaultId,
+    status: configured ? 'active' : 'unconfigured',
   }));
 
-  const enabled = await getEnabledModels(userId);
-  return NextResponse.json({ configs: masked, enabled });
+  const enabled = models.map((m) => ({
+    modelId: m.id,
+    displayName: m.displayName,
+    provider: 'google',
+    supportsVision: m.supportsVision,
+  }));
+
+  return NextResponse.json({ configs, enabled, platformConfigured: configured });
 }
 
-export async function POST(req: Request) {
+/**
+ * POST /api/models — disabled.
+ *
+ * Model management is platform-controlled. All Gemini models are provided by
+ * CodeWIX using the operator's server-side key. Users select models directly
+ * from the picker in Chat / Agent / Build.
+ */
+export async function POST() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const userId = user.id;
-
-  const body = await req.json();
-  if (!body.provider || !body.apiKey || !body.modelId || !body.displayName) {
-    return NextResponse.json({ error: 'All fields required' }, { status: 400 });
-  }
-
-  const { saveModelConfig } = await import('@/lib/ai-providers');
-  const config = await saveModelConfig({ userId, provider: body.provider, apiKey: body.apiKey, modelId: body.modelId, displayName: body.displayName, isDefault: body.isDefault });
-  return NextResponse.json({ success: true, id: config.id });
+  return NextResponse.json({
+    success: false,
+    error: 'Model management is platform-controlled. Gemini models are provided by CodeWIX — select them from the picker in Chat, Agent, or Build.',
+  }, { status: 403 });
 }

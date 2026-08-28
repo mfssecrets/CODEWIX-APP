@@ -184,7 +184,7 @@ export async function POST(
       .from('builder_messages')
       .select('role, content')
       .eq('conversation_id', convoId)
-      .order('timestamp', { ascending: true });
+      .order('created_at', { ascending: true });
 
     const chatMessages: Array<{ role: string; content: string }> = [
       { role: 'system', content: buildSystemPrompt((projectFiles ?? []).map((f: any) => ({ path: f.path, content: f.content }))) },

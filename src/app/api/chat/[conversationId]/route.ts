@@ -31,6 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ conv
 
   const messagesWithAttachments = (convo.messages ?? []).map((m: any) => ({
     ...m,
+    timestamp: m.created_at ?? m.timestamp,
     attachments: attachmentsMap.get(m.id) ?? [],
   }));
 

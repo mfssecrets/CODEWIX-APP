@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowUp, Plus, Paperclip, X, Copy, Check, RefreshCw, Square, Pencil, Trash2,
-  ChevronDown, Loader2, Image, FileText, AlertCircle, StopCircle,
+  ChevronDown, Loader2, Image as ImageIcon, FileText, AlertCircle, StopCircle,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -402,7 +402,7 @@ export default function ChatWorkspace() {
         ) : messages.length === 0 && !streaming ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center mb-4">
-              <Image className="w-7 h-7 text-violet-500" strokeWidth={1.5} />
+              <ImageIcon className="w-7 h-7 text-violet-500" strokeWidth={1.5} />
             </div>
             <h3 className="text-[18px] font-semibold text-slate-700 mb-2">Start a conversation</h3>
             <p className="text-[13.5px] text-slate-500 max-w-sm">Ask anything — code, ideas, analysis, or upload images and documents.</p>

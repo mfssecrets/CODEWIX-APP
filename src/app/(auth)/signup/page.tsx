@@ -80,6 +80,12 @@ export default function SignupPage() {
       if (user) {
         await supabase.from('profiles').update({ name: name.trim() }).eq('id', user.id);
       }
+      // Fire a transactional welcome email via Resend (best-effort, never blocks signup)
+      fetch('/api/email/welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      }).catch(() => { /* ignore */ });
       router.push('/chat');
       router.refresh();
     } catch (err: unknown) {

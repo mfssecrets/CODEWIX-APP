@@ -1,18 +1,46 @@
-# Cloudflare Worker Environment Variables (local dev)
-# Copy this to .dev.vars for local wrangler development
-# For production, set secrets via: wrangler secret put <KEY>
+# ============================================================
+# CodeWIX — Environment Variables
+# ============================================================
+# Local dev : copy to .dev.vars (wrangler) — these are loaded as Worker env.
+# Production: set as Cloudflare secrets/vars (see "Cloudflare env vars" list).
+# NEVER commit real secrets. .env.local / .dev.vars are gitignored.
+# ============================================================
 
-# Auth
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=your-secret-here-generate-with-openssl-rand-base64-32
+# ---- Supabase (REQUIRED) ----
+# Auth (email OTP), Postgres database, Storage.
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY          # server-only secret (bypasses RLS)
 
-# Database (when using external DB)
-# DATABASE_URL=postgresql://user:pass@host:5432/codewix
+# ---- AI: Platform Gemini key (REQUIRED) ----
+# This operator-provided key powers ALL users. Users never see or enter it;
+# they pick a Gemini model from the picker (like Google AI Studio).
+# Usage is gated per user by the token system tied to their subscription plan.
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+# Default model used when the user hasn't explicitly picked one.
+# Available models are defined in src/lib/ai-providers.ts (GEMINI_MODELS).
+GEMINI_DEFAULT_MODEL=gemini-3.6-flash
 
-# Encryption
+# Optional: set to "1" to disable the transparent fallback transport and
+# surface Gemini errors directly. By default, if Gemini is unreachable the
+# same request is retried through a built-in transport so users always get a
+# response. Leave unset to keep the fallback enabled (recommended).
+# AI_DISABLE_FALLBACK=1
+
+# ---- Resend (transactional email, REQUIRED) ----
+# Used for the welcome email on signup. Supabase Auth OTP emails are sent by
+# Supabase using your configured Resend SMTP settings (Supabase dashboard).
+RESEND_API_KEY=re_YOUR_RESEND_KEY
+RESEND_FROM_EMAIL=CodeWIX <noreply@codewix.in>
+
+# ---- App ----
+NEXT_PUBLIC_SITE_URL=https://codewix.in
+DOMAIN=CODEWIX.IN
+NODE_ENV=production
+
+# ---- Razorpay (billing) — required only to enable paid plans ----
+# RAZORPAY_KEY_ID=YOUR_RAZORPAY_KEY_ID
+# RAZORPAY_KEY_SECRET=YOUR_RAZORPAY_KEY_SECRET
+
+# ---- Encryption (legacy per-user key obfuscation; keep a stable 32-char value) ----
 ENCRYPTION_KEY=your-32-char-encryption-key
-
-# AI Provider API Keys (set via wrangler secret put for production)
-# GEMINI_API_KEY=
-# ZAI_API_KEY=
-# GROQ_API_KEY=

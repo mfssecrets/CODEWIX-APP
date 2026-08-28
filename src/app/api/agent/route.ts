@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       .from('messages')
       .select('role, content')
       .eq('conversation_id', convoId)
-      .order('timestamp', { ascending: true });
+      .order('created_at', { ascending: true });
 
     const aiMessages = [
       { role: 'system', content: 'You are an expert AI coding agent. Break down tasks into steps, analyze requirements, create files, and provide complete implementations. Structure your output clearly with step-by-step progress.' },

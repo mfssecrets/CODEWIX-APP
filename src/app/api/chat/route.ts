@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
       .from('messages')
       .select('role, content')
       .eq('conversation_id', convoId)
-      .order('timestamp', { ascending: true });
+      .order('created_at', { ascending: true });
     const aiMessages = (history ?? []).map((m) => ({ role: m.role, content: m.content }));
 
     // Stream AI response
