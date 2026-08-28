@@ -3,3 +3,15 @@ main = ".open-next/worker.js"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+# Non-secret runtime env vars — bound to the Worker on every deploy.
+# Secrets (SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY, RESEND_API_KEY,
+# RAZORPAY_KEY_SECRET, ENCRYPTION_KEY) are set via `wrangler secret put` in
+# the GitHub Actions workflow (from GitHub repo secrets) and persist across
+# deploys as encrypted Worker secrets.
+[vars]
+NODE_ENV = "production"
+DOMAIN = "CODEWIX.IN"
+NEXT_PUBLIC_SITE_URL = "https://codewix.in"
+GEMINI_DEFAULT_MODEL = "gemini-3.6-flash"
+RESEND_FROM_EMAIL = "CodeWIX <noreply@codewix.in>"
