@@ -1,0 +1,13 @@
+[project]
+name = "codewix"
+[api]
+port = 54321
+[db]
+port = 54322
+[auth]
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://codewix.in/**"]
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false

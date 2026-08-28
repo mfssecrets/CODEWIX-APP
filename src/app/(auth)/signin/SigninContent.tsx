@@ -1,50 +1,45 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Loader2, Mail, ArrowLeft, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import AuthCard from '@/components/codewix/AuthCard';
+import { createClient } from '@/lib/supabase/client';
 
 export default function SigninContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const redirectTo = searchParams.get('redirectTo') || '/chat';
+  const supabase = createClient();
 
   const [step, setStep] = useState<1 | 2>(1);
-  const [csrfToken, setCsrfToken] = useState('');
-
-  useEffect(() => {
-    fetch('/api/auth/csrf').then((r) => r.json()).then((d) => setCsrfToken(d.csrfToken || '')).catch(() => {});
-  }, []);
-
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState<string[]>(Array(6).fill(''));
-  const [otpHint, setOtpHint] = useState('');
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const handleSendCode = useCallback(async () => {
+  const handleSendOtp = useCallback(async () => {
     if (!email.trim()) { setError('Please enter your email'); return; }
     setError('');
     setSending(true);
     try {
-      const res = await fetch('/api/otp/send', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), purpose: 'signin' }),
+      const { error: err } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: {
+          emailRedirectTo: `${window.location.origin}/api/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
+        },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send code');
-      if (data.code) setOtpHint(data.code);
+      if (err) throw err;
       setStep(2);
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : 'Failed to send code');
     } finally { setSending(false); }
-  }, [email]);
+  }, [email, redirectTo, supabase]);
 
   const handleOtpChange = useCallback((index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
@@ -74,38 +69,35 @@ export default function SigninContent() {
     setError('');
     setVerifying(true);
     try {
-      await fetch('/api/otp/verify', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), code, purpose: 'signin' }),
+      const { error: err } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: code,
+        type: 'email',
       });
-      const params = new URLSearchParams({ email: email.trim(), otp: code, csrfToken });
-      const res = await fetch('/api/auth/callback/credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString(),
-      });
-      if (!res.ok) throw new Error('Login failed');
-      router.push(callbackUrl);
+      if (err) throw err;
+      router.push(redirectTo);
       router.refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Verification failed');
     } finally { setVerifying(false); }
-  }, [otp, email, csrfToken, callbackUrl, router]);
+  }, [otp, email, redirectTo, router, supabase]);
 
   const handleResend = useCallback(async () => {
-    setError(''); setSending(true);
+    setError('');
+    setSending(true);
     try {
-      const res = await fetch('/api/otp/send', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), purpose: 'signin' }),
+      const { error: err } = await supabase.auth.resend({
+        type: 'email',
+        email: email.trim(),
+        options: {
+          emailRedirectTo: `${window.location.origin}/api/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
+        },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to resend');
-      if (data.code) setOtpHint(data.code);
+      if (err) throw err;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to resend');
     } finally { setSending(false); }
-  }, [email]);
+  }, [email, redirectTo, supabase]);
 
   return (
     <AuthCard subtitle="Sign in to your account">
@@ -123,11 +115,11 @@ export default function SigninContent() {
               <label className="text-[12.5px] font-medium text-slate-600">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" strokeWidth={1.8} />
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendCode()} placeholder="you@example.com"
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendOtp()} placeholder="you@example.com"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/80 border border-slate-200/60 text-[13.5px] text-slate-700 placeholder:text-slate-400 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all duration-200" />
               </div>
             </div>
-            <motion.button type="button" whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleSendCode(); }} disabled={sending}
+            <motion.button type="button" whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} onClick={handleSendOtp} disabled={sending}
               className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[13.5px] font-semibold shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/35 disabled:opacity-60 transition-all duration-200">
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="flex items-center gap-2">Send Code <ArrowRight className="w-4 h-4" /></span>}
             </motion.button>
@@ -146,11 +138,6 @@ export default function SigninContent() {
                   className="w-11 h-12 text-center text-[18px] font-semibold bg-white/80 border border-slate-200/60 rounded-xl text-slate-700 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all duration-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
               ))}
             </div>
-            {otpHint && (
-              <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200/60 text-[12px] text-amber-700 text-center">
-                Test code: <span className="font-mono font-bold tracking-wider">{otpHint}</span>
-              </div>
-            )}
             <motion.button type="button" whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} onClick={handleVerify} disabled={verifying || otp.some((d) => !d)}
               className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[13.5px] font-semibold shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/35 disabled:opacity-60 transition-all duration-200">
               {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <><KeyRound className="w-4 h-4" strokeWidth={1.8} /> Verify & Sign In</>}

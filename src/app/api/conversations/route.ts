@@ -1,13 +1,18 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { createClient } from '@/lib/supabase/server';
 
 export async function POST() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const userId = (session.user as Record<string, unknown>).id as string;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
 
-  const convo = await db.conversation.create({ data: { userId, type: 'chat', title: 'New Conversation' } });
+  const { data: convo, error } = await supabase
+    .from('conversations')
+    .insert({ user_id: userId, type: 'chat', title: 'New Conversation' })
+    .select('id, title')
+    .single();
+
+  if (error) return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 });
   return NextResponse.json({ id: convo.id, title: convo.title });
 }

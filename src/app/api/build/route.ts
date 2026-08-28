@@ -1,32 +1,60 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getAuthUserId } from '@/lib/auth-helper';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET() {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
 
   try {
-    const projects = await db.project.findMany({
-      where: { userId },
-      include: {
-        _count: { select: { files: true, versions: true, conversations: true } },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const { data: projects } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    const projectIds = (projects ?? []).map((p) => p.id);
+
+    // Get file counts
+    const { data: fileRows } = projectIds.length > 0
+      ? await supabase.from('project_files').select('project_id').in('project_id', projectIds)
+      : { data: [] };
+    const fileCountMap = new Map<string, number>();
+    for (const r of fileRows ?? []) {
+      fileCountMap.set(r.project_id, (fileCountMap.get(r.project_id) ?? 0) + 1);
+    }
+
+    // Get version counts
+    const { data: versionRows } = projectIds.length > 0
+      ? await supabase.from('project_versions').select('project_id').in('project_id', projectIds)
+      : { data: [] };
+    const versionCountMap = new Map<string, number>();
+    for (const r of versionRows ?? []) {
+      versionCountMap.set(r.project_id, (versionCountMap.get(r.project_id) ?? 0) + 1);
+    }
+
+    // Get conversation counts (builder_conversations)
+    const { data: convoRows } = projectIds.length > 0
+      ? await supabase.from('builder_conversations').select('project_id').in('project_id', projectIds)
+      : { data: [] };
+    const convoCountMap = new Map<string, number>();
+    for (const r of convoRows ?? []) {
+      convoCountMap.set(r.project_id, (convoCountMap.get(r.project_id) ?? 0) + 1);
+    }
 
     return NextResponse.json({
-      projects: projects.map((p) => ({
+      projects: (projects ?? []).map((p) => ({
         id: p.id,
         name: p.name,
         description: p.description,
-        githubRepo: p.githubRepo,
-        githubBranch: p.githubBranch,
-        fileCount: p._count.files,
-        versionCount: p._count.versions,
-        conversationCount: p._count.conversations,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
+        githubRepo: p.github_repo,
+        githubBranch: p.github_branch,
+        fileCount: fileCountMap.get(p.id) ?? 0,
+        versionCount: versionCountMap.get(p.id) ?? 0,
+        conversationCount: convoCountMap.get(p.id) ?? 0,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
       })),
     });
   } catch (error) {

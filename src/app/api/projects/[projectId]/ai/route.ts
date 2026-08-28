@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getAuthUserId } from '@/lib/auth-helper';
+import { createClient } from '@/lib/supabase/server';
+import { checkAndConsumeToken } from '@/lib/tokens';
 import { getDefaultModel, getModelById, streamChat } from '@/lib/ai-providers';
 import { generateTitle } from '@/lib/ai-providers';
 import { detectLanguage } from '@/lib/language-detect';
@@ -91,20 +91,34 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId } = await params;
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-      include: { files: true },
-    });
+    // Token check
+    const tokenCheck = await checkAndConsumeToken(userId, { action: 'builder', project_id: projectId });
+    if (!tokenCheck.allowed) {
+      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached' }, { status: 429 });
+    }
+
+    const { data: project } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
+
+    const { data: projectFiles } = await supabase
+      .from('project_files')
+      .select('*')
+      .eq('project_id', projectId);
 
     const { message, attachments, modelConfigId, conversationId } = await req.json();
 
@@ -125,24 +139,31 @@ export async function POST(
 
     // Handle or find/create conversation
     let convoId = conversationId;
-    let convo: { id: string; title: string; modelId: string | null; provider: string | null } | null = null;
+    let convo: { id: string; title: string; model_id: string | null; provider: string | null } | null = null;
 
     if (convoId) {
-      convo = await db.builderConversation.findFirst({
-        where: { id: convoId, projectId },
-      });
+      const { data } = await supabase
+        .from('builder_conversations')
+        .select('*')
+        .eq('id', convoId)
+        .eq('project_id', projectId)
+        .single();
+      convo = data;
     }
 
     if (!convo) {
-      // Create new conversation
-      convo = await db.builderConversation.create({
-        data: {
-          projectId,
+      const { data, error } = await supabase
+        .from('builder_conversations')
+        .insert({
+          project_id: projectId,
           title: 'New Conversation',
-          modelId: model.modelId,
+          model_id: model.modelId,
           provider: model.provider,
-        },
-      });
+        })
+        .select('*')
+        .single();
+      if (error) throw error;
+      convo = data;
       convoId = convo.id;
     }
 
@@ -152,25 +173,24 @@ export async function POST(
       userContent += '\n\n[Attachments: ' + attachments.map((a: { fileName: string }) => a.fileName).join(', ') + ']';
     }
 
-    await db.builderMessage.create({
-      data: {
-        conversationId: convoId,
-        role: 'user',
-        content: userContent,
-      },
+    await supabase.from('builder_messages').insert({
+      conversation_id: convoId,
+      role: 'user',
+      content: userContent,
     });
 
     // Build message history
-    const historyMessages = await db.builderMessage.findMany({
-      where: { conversationId: convoId },
-      orderBy: { timestamp: 'asc' },
-    });
+    const { data: historyMessages } = await supabase
+      .from('builder_messages')
+      .select('role, content')
+      .eq('conversation_id', convoId)
+      .order('timestamp', { ascending: true });
 
     const chatMessages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: buildSystemPrompt(project.files) },
+      { role: 'system', content: buildSystemPrompt((projectFiles ?? []).map((f: any) => ({ path: f.path, content: f.content }))) },
     ];
 
-    for (const msg of historyMessages) {
+    for (const msg of historyMessages ?? []) {
       if (msg.role === 'user' || msg.role === 'assistant') {
         chatMessages.push({ role: msg.role, content: msg.content });
       }
@@ -191,11 +211,12 @@ export async function POST(
 
           // Parse and execute tool calls
           const { text: cleanText, toolCalls } = parseToolCalls(fullResponse);
+          const existingFiles = (projectFiles ?? []).map((f: any) => ({ path: f.path, content: f.content }));
 
           // Execute tool calls
           for (const tc of toolCalls) {
             try {
-              await executeToolCall(projectId, userId, tc, controller, encoder, project.files);
+              await executeToolCall(projectId, userId, tc, controller, encoder, existingFiles);
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : 'Tool execution failed';
               const errData = JSON.stringify({
@@ -214,23 +235,21 @@ export async function POST(
             ? `Executed ${toolCalls.length} file operation(s)`
             : undefined;
 
-          await db.builderMessage.create({
-            data: {
-              conversationId: convoId,
-              role: 'assistant',
-              content: cleanText || fullResponse,
-              activity: activityText,
-            },
+          const sb = await createClient();
+          await sb.from('builder_messages').insert({
+            conversation_id: convoId,
+            role: 'assistant',
+            content: cleanText || fullResponse,
+            activity: activityText,
           });
 
           // Generate title for new conversations
           if (convo && convo.title === 'New Conversation') {
             try {
               const title = await generateTitle(model, message);
-              await db.builderConversation.update({
-                where: { id: convoId },
-                data: { title },
-              });
+              await sb.from('builder_conversations').update({
+                title,
+              }).eq('id', convoId);
               const titleData = JSON.stringify({ type: 'title', title });
               controller.enqueue(encoder.encode(`data: ${titleData}\n\n`));
             } catch {
@@ -270,7 +289,7 @@ export async function POST(
 
 async function executeToolCall(
   projectId: string,
-  userId: string,
+  _userId: string,
   tc: ToolCall,
   controller: TransformStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
@@ -281,7 +300,13 @@ async function executeToolCall(
       if (!tc.path) throw new Error('Path is required for readFile');
       const file = existingFiles.find((f) => f.path === tc.path);
       if (!file) {
-        const dbFile = await db.projectFile.findFirst({ where: { projectId, path: tc.path } });
+        const supabase = await createClient();
+        const { data: dbFile } = await supabase
+          .from('project_files')
+          .select('*')
+          .eq('project_id', projectId)
+          .eq('path', tc.path)
+          .single();
         if (!dbFile) throw new Error(`File not found: ${tc.path}`);
         const readData = JSON.stringify({ type: 'tool', tool: 'readFile', path: tc.path, status: 'done', content: dbFile.content.slice(0, 2000) });
         controller.enqueue(encoder.encode(`data: ${readData}\n\n`));
@@ -303,11 +328,21 @@ async function executeToolCall(
       const normalizedPath = tc.path.replace(/^\/+/, '');
       const language = detectLanguage(normalizedPath);
 
-      await db.projectFile.upsert({
-        where: { projectId_path: { projectId, path: normalizedPath } },
-        create: { projectId, path: normalizedPath, content: tc.content, language },
-        update: { content: tc.content, language },
-      });
+      const supabase = await createClient();
+
+      // Upsert
+      const { data: existing } = await supabase
+        .from('project_files')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('path', normalizedPath)
+        .single();
+
+      if (existing) {
+        await supabase.from('project_files').update({ content: tc.content, language }).eq('id', existing.id);
+      } else {
+        await supabase.from('project_files').insert({ project_id: projectId, path: normalizedPath, content: tc.content, language });
+      }
 
       const doneData = JSON.stringify({ type: 'tool', tool: 'writeFile', path: tc.path, status: 'done' });
       controller.enqueue(encoder.encode(`data: ${doneData}\n\n`));
@@ -326,8 +361,12 @@ async function executeToolCall(
       controller.enqueue(encoder.encode(`data: ${activityData}\n\n`));
 
       const language = detectLanguage(normalizedPath);
-      await db.projectFile.create({
-        data: { projectId, path: normalizedPath, content: tc.content, language },
+      const supabase = await createClient();
+      await supabase.from('project_files').insert({
+        project_id: projectId,
+        path: normalizedPath,
+        content: tc.content,
+        language,
       });
 
       const doneData = JSON.stringify({ type: 'tool', tool: 'createFile', path: tc.path, status: 'done' });
@@ -339,13 +378,19 @@ async function executeToolCall(
       if (!tc.path) throw new Error('Path is required for deleteFile');
 
       const normalizedPath = tc.path.replace(/^\/+/, '');
-      const file = await db.projectFile.findFirst({ where: { projectId, path: normalizedPath } });
+      const supabase = await createClient();
+      const { data: file } = await supabase
+        .from('project_files')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('path', normalizedPath)
+        .single();
       if (!file) throw new Error(`File not found: ${tc.path}`);
 
       const activityData = JSON.stringify({ type: 'activity', activity: `Deleting ${tc.path}` });
       controller.enqueue(encoder.encode(`data: ${activityData}\n\n`));
 
-      await db.projectFile.delete({ where: { id: file.id } });
+      await supabase.from('project_files').delete().eq('id', file.id);
 
       const doneData = JSON.stringify({ type: 'tool', tool: 'deleteFile', path: tc.path, status: 'done' });
       controller.enqueue(encoder.encode(`data: ${doneData}\n\n`));

@@ -1,16 +1,15 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ChevronDown, Wifi } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Wifi, LogOut, User } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { useUser } from "@/components/Providers";
+import { Skeleton } from "@/components/skeleton/SkeletonCard";
 
 export default function Header() {
+  const { user, profile, loading, signOut } = useUser();
+
   return (
     <motion.header
       initial={{ y: -10, opacity: 0 }}
@@ -18,43 +17,52 @@ export default function Header() {
       transition={{ duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
       className="flex items-center justify-between px-6 py-3.5"
     >
-      {/* Model Selector */}
-      <Select defaultValue="glm-5.2">
-        <SelectTrigger className="w-[180px] h-9 text-[13px] font-medium bg-white/60 border-slate-200/50 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200">
-          <SelectValue placeholder="Select Model" />
-        </SelectTrigger>
-        <SelectContent className="rounded-xl border-slate-200/60 shadow-lg">
-          <SelectItem value="glm-5.2" className="text-[13px]">GLM-5.2</SelectItem>
-          <SelectItem value="glm-5" className="text-[13px]">GLM-5</SelectItem>
-          <SelectItem value="glm-4" className="text-[13px]">GLM-4</SelectItem>
-          <SelectItem value="code-llm" className="text-[13px]">CodeLLM-Pro</SelectItem>
-        </SelectContent>
-      </Select>
+      {/* Logo */}
+      <Link href="/" className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg overflow-hidden shadow-lg shadow-purple-500/20">
+          <Image src="/logo.png" alt="CodeWIX" width={32} height={32} className="object-cover" />
+        </div>
+        <span className="text-[17px] font-semibold tracking-tight text-slate-800">CodeWIX</span>
+      </Link>
 
       {/* Right Side */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {/* API Status */}
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.4, duration: 0.4 }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50/80 border border-emerald-200/50"
+          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50/80 border border-emerald-200/50"
         >
           <div className="relative">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
             <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-40" />
           </div>
-          <span className="text-[11.5px] font-semibold text-emerald-700 tracking-wide uppercase">API</span>
+          <span className="text-[11.5px] font-semibold text-emerald-700 tracking-wide uppercase">Online</span>
         </motion.div>
 
-        {/* User Avatar */}
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center text-white text-[12px] font-semibold shadow-md shadow-purple-500/15 hover:shadow-lg hover:shadow-purple-500/25 transition-shadow duration-300"
-        >
-          U
-        </motion.button>
+        {loading ? (
+          <Skeleton className="w-32 h-9 rounded-xl" />
+        ) : user ? (
+          <div className="flex items-center gap-2">
+            <Link href="/chat" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[13px] font-semibold shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/35 transition-all duration-200">
+              <User className="w-4 h-4" strokeWidth={1.8} />
+              <span className="hidden sm:inline">Dashboard</span>
+            </Link>
+            <button onClick={signOut} className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all duration-200" title="Sign out">
+              <LogOut className="w-4 h-4" strokeWidth={1.8} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Link href="/signin" className="px-4 py-2 rounded-xl text-[13px] font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 transition-all duration-200">
+              Sign in
+            </Link>
+            <Link href="/signup" className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[13px] font-semibold shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/35 transition-all duration-200">
+              Get Started
+            </Link>
+          </div>
+        )}
       </div>
     </motion.header>
   );

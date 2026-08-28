@@ -1,30 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getAuthUserId } from '@/lib/auth-helper';
+import { createClient } from '@/lib/supabase/server';
+import { canCreateProject } from '@/lib/subscription';
 
 export async function GET() {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
 
   try {
-    const projects = await db.project.findMany({
-      where: { userId },
-      include: {
-        _count: { select: { files: true } },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const { data: projects } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    // Get file counts
+    const projectIds = (projects ?? []).map((p) => p.id);
+    const { data: fileCounts } = projectIds.length > 0
+      ? await supabase
+          .from('project_files')
+          .select('project_id')
+          .in('project_id', projectIds)
+      : { data: [] };
+
+    const countMap = new Map<string, number>();
+    for (const fc of fileCounts ?? []) {
+      countMap.set(fc.project_id, (countMap.get(fc.project_id) ?? 0) + 1);
+    }
 
     return NextResponse.json({
-      projects: projects.map((p) => ({
+      projects: (projects ?? []).map((p) => ({
         id: p.id,
         name: p.name,
         description: p.description,
-        githubRepo: p.githubRepo,
-        githubBranch: p.githubBranch,
-        fileCount: p._count.files,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
+        github_repo: p.github_repo,
+        github_branch: p.github_branch,
+        fileCount: countMap.get(p.id) ?? 0,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
       })),
     });
   } catch (error) {
@@ -34,23 +48,37 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
 
   try {
+    // Check project creation limit
+    const canCreate = await canCreateProject(userId);
+    if (!canCreate.allowed) {
+      return NextResponse.json({ error: canCreate.reason || 'Project limit reached' }, { status: 403 });
+    }
+
     const { name, description } = await req.json();
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
     }
 
-    const project = await db.project.create({
-      data: {
-        userId,
+    const { data: project, error } = await supabase
+      .from('projects')
+      .insert({
+        user_id: userId,
         name: name.trim(),
         description: description?.trim() || null,
-      },
-    });
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: 'Failed to create project' }, { status: 500 });
+    }
 
     return NextResponse.json({ project }, { status: 201 });
   } catch (error) {

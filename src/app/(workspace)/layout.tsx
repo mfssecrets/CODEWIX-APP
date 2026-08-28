@@ -2,12 +2,12 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { motion } from 'framer-motion';
-import { MessageSquare, Bot, Plus, LayoutGrid, Settings, History, LogOut, Hammer } from 'lucide-react';
+import { MessageSquare, Bot, LayoutGrid, Settings, History, LogOut, Hammer, CreditCard, Zap } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { signOut } from 'next-auth/react';
 import Image from 'next/image';
+import { useUser } from '@/components/Providers';
+import { SkeletonPage, SkeletonSidebar } from '@/components/skeleton/SkeletonCard';
 
 const Background3D = dynamic(() => import('@/components/codewix/Background3D'), { ssr: false });
 
@@ -18,13 +18,15 @@ const mainNav = [
 ];
 const secondaryNav = [
   { id: 'history', label: 'History', icon: History, path: '/history' },
-  { id: 'models', label: 'Model Settings', icon: Settings, path: '/settings/models' },
+  { id: 'pricing', label: 'Pricing', icon: CreditCard, path: '/pricing' },
+  { id: 'models', label: 'Models', icon: Settings, path: '/settings/models' },
 ];
 
 function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+  const { user, profile, signOut } = useUser();
 
   const isActive = (path: string) => pathname === path || (path !== '/' && pathname.startsWith(path + '/'));
 
@@ -45,7 +47,12 @@ function SidebarNav() {
         )}
       </div>
 
-      <nav className="flex flex-col gap-1 px-3 pt-5">
+      {/* Token indicator */
+      {!collapsed && (
+        <TokenIndicator />
+      )}
+
+      <nav className="flex flex-col gap-1 px-3 pt-3">
         {mainNav.map((item) => (
           <motion.button key={item.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push(item.path)}
             className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium transition-all duration-200 ${
@@ -60,7 +67,7 @@ function SidebarNav() {
         ))}
       </nav>
 
-      <div className="mx-5 my-4 border-t border-slate-200/50" />
+      <div className="mx-5 my-3 border-t border-slate-200/50" />
 
       <nav className="flex flex-col gap-1 px-3">
         {secondaryNav.map((item) => (
@@ -69,7 +76,7 @@ function SidebarNav() {
               isActive(item.path) ? 'bg-purple-50 text-violet-700' : 'text-slate-500 hover:bg-slate-100/70 hover:text-slate-700'
             }`}>
             {isActive(item.path) && (
-              <motion.div layoutId="activeTab" className="absolute inset-0 rounded-xl bg-purple-50/80" transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }} />
+              <motion.div layoutId="activeTab2" className="absolute inset-0 rounded-xl bg-purple-50/80" transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }} />
             )}
             <item.icon className={`relative z-10 w-[18px] h-[18px] ${isActive(item.path) ? 'text-violet-600' : ''}`} strokeWidth={1.8} />
             {!collapsed && <span className="relative z-10">{item.label}</span>}
@@ -79,8 +86,15 @@ function SidebarNav() {
 
       <div className="flex-1" />
 
+      {!collapsed && user && profile && (
+        <div className="mx-3 mb-2 px-3 py-2 rounded-xl bg-slate-50/80">
+          <p className="text-[12px] font-medium text-slate-700 truncate">{profile.name || profile.email}</p>
+          <p className="text-[11px] text-slate-400 truncate">{profile.email}</p>
+        </div>
+      )}
+
       <div className="px-3 pb-3">
-        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => signOut({ callbackUrl: '/signin' })}
+        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => signOut()}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-slate-500 hover:bg-red-50/80 hover:text-red-600 transition-all duration-200 w-full">
           <LogOut className="w-[18px] h-[18px]" strokeWidth={1.8} />
           {!collapsed && <span>Sign out</span>}
@@ -95,16 +109,46 @@ function SidebarNav() {
   );
 }
 
+function TokenIndicator() {
+  const [tokens, setTokens] = useState<{ available: number; total: number } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/tokens').then(r => r.json()).then(d => setTokens(d)).catch(() => {});
+  }, []);
+
+  if (!tokens) return <div className="px-5 pt-3"><Skeleton className="h-6 rounded-full" /></div>;
+
+  const pct = tokens.total > 0 ? (tokens.available / tokens.total) * 100 : 0;
+  const isLow = pct < 20;
+
+  return (
+    <div className="px-5 pt-3">
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100">
+        <Zap className={`w-3.5 h-3.5 ${isLow ? 'text-amber-500' : 'text-violet-500'}`} strokeWidth={2} />
+        <div className="flex-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+          <div className={`h-full rounded-full transition-all duration-500 ${isLow ? 'bg-amber-400' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className={`text-[11px] font-medium ${isLow ? 'text-amber-600' : 'text-slate-500'}`}>{tokens.available}/{tokens.total}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
-  const { data: session, status } = useSession();
+  const { user, loading } = useUser();
   const router = useRouter();
 
-  useEffect(() => { if (status === 'unauthenticated') router.push('/signin'); }, [status, router]);
+  useEffect(() => { if (!loading && !user) router.push('/signin'); }, [loading, user, router]);
 
-  if (status === 'loading') {
-    return <div className="flex h-screen items-center justify-center"><div className="w-8 h-8 border-2 border-violet-200 border-t-violet-600 rounded-full animate-spin" /></div>;
+  if (loading) {
+    return (
+      <div className="flex h-screen overflow-hidden">
+        <div className="w-[260px] border-r border-slate-100 bg-white/60"><SkeletonSidebar /></div>
+        <div className="flex-1"><SkeletonPage /></div>
+      </div>
+    );
   }
-  if (!session) return null;
+  if (!user) return null;
 
   return (
     <div className="flex h-screen overflow-hidden">

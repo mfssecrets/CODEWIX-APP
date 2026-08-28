@@ -1,42 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getAuthUserId } from '@/lib/auth-helper';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId } = await params;
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    const conversations = await db.builderConversation.findMany({
-      where: { projectId },
-      orderBy: { updatedAt: 'desc' },
-      include: {
-        _count: { select: { messages: true } },
-      },
-    });
+    const { data: conversations } = await supabase
+      .from('builder_conversations')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('updated_at', { ascending: false });
+
+    // Get message counts for each conversation
+    const convoIds = (conversations ?? []).map((c) => c.id);
+    const { data: msgCounts } = convoIds.length > 0
+      ? await supabase
+          .from('builder_messages')
+          .select('conversation_id')
+          .in('conversation_id', convoIds)
+      : { data: [] };
+
+    const countMap = new Map<string, number>();
+    for (const mc of msgCounts ?? []) {
+      countMap.set(mc.conversation_id, (countMap.get(mc.conversation_id) ?? 0) + 1);
+    }
 
     return NextResponse.json({
-      conversations: conversations.map((c) => ({
+      conversations: (conversations ?? []).map((c) => ({
         id: c.id,
         title: c.title,
-        modelId: c.modelId,
+        modelId: c.model_id,
         provider: c.provider,
-        messageCount: c._count.messages,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
+        messageCount: countMap.get(c.id) ?? 0,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
       })),
     });
   } catch (error) {
@@ -49,29 +64,39 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId } = await params;
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
     const body = await req.json();
-    const conversation = await db.builderConversation.create({
-      data: {
-        projectId,
+    const { data: conversation, error } = await supabase
+      .from('builder_conversations')
+      .insert({
+        project_id: projectId,
         title: body.title || 'New Conversation',
-        modelId: body.modelId || null,
+        model_id: body.modelId || null,
         provider: body.provider || null,
-      },
-    });
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 });
+    }
 
     return NextResponse.json({ conversation }, { status: 201 });
   } catch (error) {

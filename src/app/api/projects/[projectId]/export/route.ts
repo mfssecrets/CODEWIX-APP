@@ -1,36 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getAuthUserId } from '@/lib/auth-helper';
+import { createClient } from '@/lib/supabase/server';
 import JSZip from 'jszip';
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId } = await params;
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-      include: { files: true },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
+    const { data: files } = await supabase
+      .from('project_files')
+      .select('*')
+      .eq('project_id', projectId);
+
+    const projectFiles = files ?? [];
+
     const zip = new JSZip();
 
     // Add all project files
-    for (const file of project.files) {
+    for (const file of projectFiles) {
       zip.file(file.path, file.content);
     }
 
     // Generate package.json if not present
-    const hasPackageJson = project.files.some((f) => f.path === 'package.json');
+    const hasPackageJson = projectFiles.some((f) => f.path === 'package.json');
     if (!hasPackageJson) {
       const packageJson = {
         name: project.name.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
@@ -58,11 +67,11 @@ export async function GET(
     }
 
     // Generate README.md if not present
-    const hasReadme = project.files.some(
+    const hasReadme = projectFiles.some(
       (f) => f.path.toLowerCase() === 'readme.md'
     );
     if (!hasReadme) {
-      const fileList = project.files
+      const fileList = projectFiles
         .map((f) => '- `' + f.path + '`')
         .join('\n');
 

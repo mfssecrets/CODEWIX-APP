@@ -1,45 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getAuthUserId } from '@/lib/auth-helper';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId } = await params;
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-      include: {
-        files: {
-          orderBy: { path: 'asc' },
-        },
-      },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
+
+    const { data: files } = await supabase
+      .from('project_files')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('path', { ascending: true });
 
     return NextResponse.json({
       project: {
         id: project.id,
         name: project.name,
         description: project.description,
-        githubRepo: project.githubRepo,
-        githubBranch: project.githubBranch,
-        createdAt: project.createdAt,
-        updatedAt: project.updatedAt,
-        files: project.files.map((f) => ({
+        githubRepo: project.github_repo,
+        githubBranch: project.github_branch,
+        createdAt: project.created_at,
+        updatedAt: project.updated_at,
+        files: (files ?? []).map((f) => ({
           id: f.id,
           path: f.path,
           language: f.language,
-          createdAt: f.createdAt,
-          updatedAt: f.updatedAt,
+          createdAt: f.created_at,
+          updatedAt: f.updated_at,
         })),
       },
     });
@@ -53,15 +57,19 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId } = await params;
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
@@ -82,17 +90,23 @@ export async function PATCH(
     }
 
     if (body.githubRepo !== undefined) {
-      updateData.githubRepo = body.githubRepo === null ? null : String(body.githubRepo).trim();
+      updateData.github_repo = body.githubRepo === null ? null : String(body.githubRepo).trim();
     }
 
     if (body.githubBranch !== undefined) {
-      updateData.githubBranch = body.githubBranch === null ? null : String(body.githubBranch).trim();
+      updateData.github_branch = body.githubBranch === null ? null : String(body.githubBranch).trim();
     }
 
-    const updated = await db.project.update({
-      where: { id: projectId },
-      data: updateData,
-    });
+    const { data: updated, error } = await supabase
+      .from('projects')
+      .update(updateData)
+      .eq('id', projectId)
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: 'Failed to update project' }, { status: 500 });
+    }
 
     return NextResponse.json({ project: updated });
   } catch (error) {
@@ -105,21 +119,25 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId } = await params;
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    await db.project.delete({ where: { id: projectId } });
+    await supabase.from('projects').delete().eq('id', projectId);
 
     return NextResponse.json({ success: true, message: 'Project deleted' });
   } catch (error) {

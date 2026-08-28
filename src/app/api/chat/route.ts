@@ -1,18 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { createClient } from '@/lib/supabase/server';
+import { checkAndConsumeToken } from '@/lib/tokens';
 import { getDefaultModel, getEnabledModels, streamChat, generateTitle } from '@/lib/ai-providers';
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const userId = user.id;
 
     const { message, attachments, modelConfigId, conversationId } = await req.json();
     if (!message?.trim() && (!attachments || !attachments.length)) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
+    }
+
+    // Token check
+    const tokenCheck = await checkAndConsumeToken(userId, { action: 'chat' });
+    if (!tokenCheck.allowed) {
+      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached' }, { status: 429 });
     }
 
     let model = modelConfigId
@@ -33,10 +39,19 @@ export async function POST(req: NextRequest) {
     // Build or find conversation
     let convoId = conversationId;
     if (!convoId) {
-      const convo = await db.conversation.create({ data: { userId, type: 'chat', modelId: model.modelId, provider: model.provider } });
-      convoId = convo.id;
+      const { data: convo } = await supabase
+        .from('conversations')
+        .insert({ user_id: userId, type: 'chat', model_id: model.modelId, provider: model.provider })
+        .select('id')
+        .single();
+      convoId = convo!.id;
     } else {
-      const existing = await db.conversation.findFirst({ where: { id: convoId, userId } });
+      const { data: existing } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('id', convoId)
+        .eq('user_id', userId)
+        .single();
       if (!existing) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
@@ -67,26 +82,44 @@ export async function POST(req: NextRequest) {
     }
 
     // Save user message
-    const userMsg = await db.message.create({
-      data: { conversationId: convoId, role: 'user', content: typeof userContent === 'string' ? userContent : message },
-    });
-    if (attachments?.length) {
-      await db.attachment.createMany({
-        data: attachments.map((a: { fileName: string; filePath: string; fileType: string; fileSize: number; mimeType: string }) => ({ messageId: userMsg.id, ...a })),
-      });
+    const { data: userMsg } = await supabase
+      .from('messages')
+      .insert({ conversation_id: convoId, role: 'user', content: typeof userContent === 'string' ? userContent : message })
+      .select('id')
+      .single();
+
+    if (attachments?.length && userMsg) {
+      await supabase.from('attachments').insert(
+        attachments.map((a: { fileName: string; filePath: string; fileType: string; fileSize: number; mimeType: string }) => ({
+          message_id: userMsg.id,
+          file_name: a.fileName,
+          file_path: a.filePath,
+          file_type: a.fileType,
+          file_size: a.fileSize,
+          mime_type: a.mimeType,
+        }))
+      );
     }
 
     // Generate title for new conversations
-    const existingMessages = await db.message.count({ where: { conversationId: convoId } });
-    if (existingMessages <= 1) {
-      generateTitle(model, message).then((title) => {
-        db.conversation.update({ where: { id: convoId }, data: { title } }).catch(() => {});
+    const { count } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('conversation_id', convoId);
+    if ((count ?? 0) <= 1) {
+      generateTitle(model, message).then(async (title) => {
+        const sb = await createClient();
+        await sb.from('conversations').update({ title }).eq('id', convoId);
       });
     }
 
     // Get conversation history for context
-    const history = await db.message.findMany({ where: { conversationId: convoId }, orderBy: { timestamp: 'asc' } });
-    const aiMessages = history.map((m) => ({ role: m.role, content: m.content }));
+    const { data: history } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('conversation_id', convoId)
+      .order('timestamp', { ascending: true });
+    const aiMessages = (history ?? []).map((m) => ({ role: m.role, content: m.content }));
 
     // Stream AI response
     const encoder = new TextEncoder();
@@ -99,14 +132,16 @@ export async function POST(req: NextRequest) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
           }
           // Save AI message
-          await db.message.create({ data: { conversationId: convoId, role: 'assistant', content: fullResponse } });
-          await db.conversation.update({ where: { id: convoId }, data: { updatedAt: new Date() } });
+          const sb = await createClient();
+          await sb.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: fullResponse });
+          await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convoId);
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : 'Stream failed';
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: errMsg })}\n\n`));
           if (fullResponse) {
-            await db.message.create({ data: { conversationId: convoId, role: 'assistant', content: fullResponse } });
+            const sb = await createClient();
+            await sb.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: fullResponse });
           }
         } finally {
           controller.close();

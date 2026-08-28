@@ -1,26 +1,20 @@
 "use client";
 
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { useUser } from '@/components/Providers';
+import { SkeletonPage } from '@/components/skeleton/SkeletonCard';
 
 export default function IdeLayout({ children }: { children: React.ReactNode }) {
-  const { data: session, status } = useSession();
+  const { user, loading } = useUser();
   const router = useRouter();
 
   useEffect(() => {
-    if (status === 'unauthenticated') router.push('/signin');
-  }, [status, router]);
+    if (!loading && !user) router.push('/signin');
+  }, [loading, user, router]);
 
-  if (status === 'loading') {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="w-8 h-8 border-2 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!session) return null;
+  if (loading) return <SkeletonPage />;
+  if (!user) return null;
 
   return <div className="h-screen w-screen overflow-hidden">{children}</div>;
 }

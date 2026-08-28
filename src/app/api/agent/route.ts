@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { createClient } from '@/lib/supabase/server';
+import { checkAndConsumeToken } from '@/lib/tokens';
 import { getDefaultModel, getEnabledModels, streamChat, generateTitle } from '@/lib/ai-providers';
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const userId = user.id;
 
     const { prompt, attachments, modelConfigId, conversationId } = await req.json();
     if (!prompt?.trim()) return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
+
+    // Token check
+    const tokenCheck = await checkAndConsumeToken(userId, { action: 'agent' });
+    if (!tokenCheck.allowed) {
+      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached' }, { status: 429 });
+    }
 
     let model = modelConfigId
       ? await (await import('@/lib/ai-providers')).getModelById(userId, modelConfigId)
@@ -29,8 +35,12 @@ export async function POST(req: NextRequest) {
 
     let convoId = conversationId;
     if (!convoId) {
-      const convo = await db.conversation.create({ data: { userId, type: 'agent', modelId: model.modelId, provider: model.provider } });
-      convoId = convo.id;
+      const { data: convo } = await supabase
+        .from('conversations')
+        .insert({ user_id: userId, type: 'agent', model_id: model.modelId, provider: model.provider })
+        .select('id')
+        .single();
+      convoId = convo!.id;
     }
 
     let userContent = prompt;
@@ -58,22 +68,39 @@ export async function POST(req: NextRequest) {
       userContent = parts;
     }
 
-    await db.message.create({ data: { conversationId: convoId, role: 'user', content: typeof userContent === 'string' ? userContent : prompt } });
+    await supabase.from('messages').insert({
+      conversation_id: convoId,
+      role: 'user',
+      content: typeof userContent === 'string' ? userContent : prompt,
+    });
 
-    const existing = await db.message.count({ where: { conversationId: convoId } });
-    if (existing <= 1) {
-      generateTitle(model, prompt).then((title) => {
-        db.conversation.update({ where: { id: convoId }, data: { title } }).catch(() => {});
+    const { count } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('conversation_id', convoId);
+    if ((count ?? 0) <= 1) {
+      generateTitle(model, prompt).then(async (title) => {
+        const sb = await createClient();
+        await sb.from('conversations').update({ title }).eq('id', convoId);
       });
     }
 
     // Create agent task
-    const task = await db.agentTask.create({ data: { conversationId: convoId, status: 'planning', activity: 'Planning' } });
+    const { data: task } = await supabase
+      .from('agent_tasks')
+      .insert({ conversation_id: convoId, status: 'planning', activity: 'Planning' })
+      .select('id')
+      .single();
 
-    const history = await db.message.findMany({ where: { conversationId: convoId }, orderBy: { timestamp: 'asc' } });
+    const { data: history } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('conversation_id', convoId)
+      .order('timestamp', { ascending: true });
+
     const aiMessages = [
       { role: 'system', content: 'You are an expert AI coding agent. Break down tasks into steps, analyze requirements, create files, and provide complete implementations. Structure your output clearly with step-by-step progress.' },
-      ...history.map((m) => ({ role: m.role, content: m.content })),
+      ...(history ?? []).map((m) => ({ role: m.role, content: m.content })),
     ];
 
     const agentStates = [
@@ -90,22 +117,25 @@ export async function POST(req: NextRequest) {
         let fullResponse = '';
         try {
           for (let i = 0; i < agentStates.length; i++) {
-            await db.agentTask.update({ where: { id: task.id }, data: agentStates[i] });
+            const sb = await createClient();
+            await sb.from('agent_tasks').update(agentStates[i]).eq('id', task!.id);
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'status', ...agentStates[i] })}\n\n`));
           }
           for await (const chunk of streamChat(model, aiMessages)) {
             fullResponse += chunk;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`));
           }
-          await db.message.create({ data: { conversationId: convoId, role: 'assistant', content: fullResponse } });
-          await db.agentTask.update({ where: { id: task.id }, data: { output: fullResponse, status: 'completed', activity: 'Completed', buildStatus: 'success' } });
-          await db.conversation.update({ where: { id: convoId }, data: { updatedAt: new Date() } });
+          const sb = await createClient();
+          await sb.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: fullResponse });
+          await sb.from('agent_tasks').update({ output: fullResponse, status: 'completed', activity: 'Completed', build_status: 'success' }).eq('id', task!.id);
+          await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convoId);
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : 'Agent failed';
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`));
-          await db.agentTask.update({ where: { id: task.id }, data: { error: errMsg, status: 'completed', activity: 'Failed', buildStatus: 'failed' } });
-          if (fullResponse) await db.message.create({ data: { conversationId: convoId, role: 'assistant', content: fullResponse } });
+          const sb = await createClient();
+          await sb.from('agent_tasks').update({ error: errMsg, status: 'completed', activity: 'Failed', build_status: 'failed' }).eq('id', task!.id);
+          if (fullResponse) await sb.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: fullResponse });
         } finally {
           controller.close();
         }

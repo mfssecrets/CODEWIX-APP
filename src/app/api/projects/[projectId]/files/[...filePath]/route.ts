@@ -1,30 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getAuthUserId } from '@/lib/auth-helper';
+import { createClient } from '@/lib/supabase/server';
 import { detectLanguage } from '@/lib/language-detect';
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ projectId: string; filePath: string[] }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId, filePath } = await params;
   const filePathStr = filePath.join('/');
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    const file = await db.projectFile.findFirst({
-      where: { projectId, path: filePathStr },
-    });
+    const { data: file } = await supabase
+      .from('project_files')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('path', filePathStr)
+      .single();
 
     if (!file) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
@@ -36,8 +42,8 @@ export async function GET(
         path: file.path,
         content: file.content,
         language: file.language || detectLanguage(file.path),
-        createdAt: file.createdAt,
-        updatedAt: file.updatedAt,
+        createdAt: file.created_at,
+        updatedAt: file.updated_at,
       },
     });
   } catch (error) {
@@ -50,24 +56,31 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string; filePath: string[] }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId, filePath } = await params;
   const filePathStr = filePath.join('/');
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    const existing = await db.projectFile.findFirst({
-      where: { projectId, path: filePathStr },
-    });
+    const { data: existing } = await supabase
+      .from('project_files')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('path', filePathStr)
+      .single();
 
     if (!existing) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
@@ -75,10 +88,16 @@ export async function PUT(
 
     const { content } = await req.json();
 
-    const file = await db.projectFile.update({
-      where: { id: existing.id },
-      data: { content: content ?? '' },
-    });
+    const { data: file, error } = await supabase
+      .from('project_files')
+      .update({ content: content ?? '' })
+      .eq('id', existing.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: 'Failed to update file' }, { status: 500 });
+    }
 
     return NextResponse.json({ file });
   } catch (error) {
@@ -91,30 +110,37 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ projectId: string; filePath: string[] }> }
 ) {
-  const userId = await getAuthUserId();
-  if (userId instanceof NextResponse) return userId;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = user.id;
   const { projectId, filePath } = await params;
   const filePathStr = filePath.join('/');
 
   try {
-    const project = await db.project.findFirst({
-      where: { id: projectId, userId },
-    });
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .single();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    const existing = await db.projectFile.findFirst({
-      where: { projectId, path: filePathStr },
-    });
+    const { data: existing } = await supabase
+      .from('project_files')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('path', filePathStr)
+      .single();
 
     if (!existing) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
 
-    await db.projectFile.delete({ where: { id: existing.id } });
+    await supabase.from('project_files').delete().eq('id', existing.id);
 
     return NextResponse.json({ success: true, message: 'File deleted' });
   } catch (error) {
