@@ -75,7 +75,45 @@ export async function consumeToken(userId: string, amount: number = 1, meta?: { 
   return true;
 }
 
-export async function checkAndConsumeToken(userId: string, meta?: { action?: string; project_id?: string; conversation_id?: string }): Promise<{ allowed: boolean; remaining: number; reason?: string }> {
+/**
+ * Free tier: the first FREE_TIER_LIMIT chat/agent prompts are free for every
+ * user, regardless of plan. Builder (file-generation) actions are NOT free —
+ * they always require plan tokens. The count is based on the number of past
+ * token_usage rows for that action by that user (lifetime, never resets).
+ */
+const FREE_TIER_LIMIT = 5;
+const FREE_ACTIONS = ['chat', 'agent'];
+
+async function getFreeUsageCount(userId: string, action: string): Promise<number> {
+  const supabase = createServiceClient();
+  const { count } = await supabase
+    .from('token_usage')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .in('action', FREE_ACTIONS);
+  return count ?? 0;
+}
+
+export async function checkAndConsumeToken(userId: string, meta?: { action?: string; project_id?: string; conversation_id?: string }): Promise<{ allowed: boolean; remaining: number; reason?: string; freeTier?: boolean }> {
+  const action = meta?.action ?? 'chat';
+
+  // Free tier: first FREE_TIER_LIMIT chat/agent prompts are free.
+  if (FREE_ACTIONS.includes(action)) {
+    const usedCount = await getFreeUsageCount(userId, action);
+    if (usedCount < FREE_TIER_LIMIT) {
+      // Free — log usage but don't decrement plan tokens.
+      const supabase = createServiceClient();
+      await supabase.from('token_usage').insert({
+        user_id: userId,
+        tokens_used: 0,
+        action,
+        project_id: meta?.project_id ?? null,
+        conversation_id: meta?.conversation_id ?? null,
+      });
+      return { allowed: true, remaining: FREE_TIER_LIMIT - usedCount - 1, freeTier: true };
+    }
+  }
+
   const available = await getAvailableTokens(userId);
   if (available <= 0) {
     const supabase = createServiceClient();
@@ -89,7 +127,9 @@ export async function checkAndConsumeToken(userId: string, meta?: { action?: str
     return {
       allowed: false,
       remaining: 0,
-      reason: `You have used all your ${planName} plan tokens. Upgrade your plan for more tokens.`,
+      reason: FREE_ACTIONS.includes(action)
+        ? `You've used all ${FREE_TIER_LIMIT} free prompts and your ${planName} plan tokens. Upgrade your plan for more prompts.`
+        : `You have used all your ${planName} plan tokens. Upgrade your plan for more tokens.`,
     };
   }
   const consumed = await consumeToken(userId, 1, meta);
@@ -100,13 +140,10 @@ export async function checkAndConsumeToken(userId: string, meta?: { action?: str
   };
 }
 
-// Check if user has free trial remaining (first project, max 2 prompts)
+// Check how many free prompts the user has left (chat + agent combined).
 export async function getFreePromptCount(userId: string): Promise<{ used: number; limit: number; hasFree: boolean }> {
-  const supabase = createServiceClient();
-  const { count } = await supabase
-    .from('token_usage')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId);
-  const used = count ?? 0;
-  return { used, limit: 2, hasFree: used < 2 };
+  const used = await getFreeUsageCount(userId, 'chat'); // counts chat + agent (in query)
+  return { used, limit: FREE_TIER_LIMIT, hasFree: used < FREE_TIER_LIMIT };
 }
+
+export { FREE_TIER_LIMIT, FREE_ACTIONS };

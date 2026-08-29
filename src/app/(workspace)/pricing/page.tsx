@@ -19,15 +19,17 @@ export default function PricingPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/billing/plans').then(r => r.json()),
-      user ? fetch('/api/billing/portal').then(r => r.json()) : Promise.resolve(null),
+      fetch('/api/billing/plans').then(r => r.json()).catch(() => ({ plans: [] })),
+      user ? fetch('/api/billing/portal').then(r => r.json()).catch(() => null) : Promise.resolve(null),
     ]).then(([plansData, portalData]) => {
-      setPlans(plansData || []);
+      // /api/billing/plans returns { plans: [...] }; guard against an error object.
+      const planList = Array.isArray(plansData?.plans) ? plansData.plans : (Array.isArray(plansData) ? plansData : []);
+      setPlans(planList);
       if (portalData?.subscription) {
-        setCurrentPlan(portalData.subscription.plans?.slug);
+        setCurrentPlan(portalData.subscription.plans?.slug ?? null);
       }
       setLoading(false);
-    });
+    }).catch(() => { setPlans([]); setLoading(false); });
   }, [user]);
 
   const handleSubscribe = async (planId: string) => {
@@ -92,7 +94,12 @@ export default function PricingPage() {
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {plans.map((plan: any, i: number) => {
+          {plans.length === 0 ? (
+            <div className="col-span-full text-center py-16">
+              <p className="text-[15px] text-slate-500 mb-1">Couldn&apos;t load plans right now.</p>
+              <p className="text-[13px] text-slate-400">Please refresh the page or try again in a moment.</p>
+            </div>
+          ) : plans.map((plan: any, i: number) => {
             const Icon = planIcons[plan.slug as keyof typeof planIcons] || Zap;
             const isCurrent = plan.slug === currentPlan;
             const features = typeof plan.features === 'string' ? JSON.parse(plan.features) : (plan.features || []);
