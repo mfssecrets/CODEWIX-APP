@@ -554,6 +554,8 @@ export default function BuilderIDEPage() {
   const saveTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
+  // Ref to the latest handleSend (used by the initial-prompt auto-send effect).
+  const handleSendRef = useRef<(() => Promise<void>) | null>(null);
 
   // ── Effects ──────────────────────────────────────────────────────
 
@@ -567,9 +569,9 @@ export default function BuilderIDEPage() {
       .catch(() => {});
   }, [projectId]);
 
-  // Fetch models
+  // Fetch models (Build Studio → coding models only: Cerebras + OpenRouter)
   useEffect(() => {
-    fetch('/api/models')
+    fetch('/api/models?category=code')
       .then((r) => (r.ok ? r.json() : { configs: [] }))
       .then((data) => {
         const list: ModelConfig[] = (data.configs || []).filter(
@@ -590,9 +592,12 @@ export default function BuilderIDEPage() {
     if (models.length === 0) return; // wait for models to load
     if (streaming) return;
     initialPromptSentRef.current = true;
-    setInput(initialPrompt);
-    // Defer the send so React commits the input state before handleSend reads it.
-    const t = setTimeout(() => { handleSendRef.current?.(); }, 50);
+    // Defer setInput + handleSend out of the effect body to avoid cascading renders.
+    const t = setTimeout(() => {
+      setInput(initialPrompt);
+      // Allow React to commit the input state before handleSend reads it.
+      setTimeout(() => { handleSendRef.current?.(); }, 0);
+    }, 0);
     return () => clearTimeout(t);
   }, [initialPrompt, models, streaming]);
 
@@ -892,10 +897,6 @@ export default function BuilderIDEPage() {
   );
 
   // ── AI Chat ──────────────────────────────────────────────────────
-
-  // Keep a ref to the latest handleSend so the initial-prompt effect can call
-  // it without re-running on every input change.
-  const handleSendRef = useRef<(() => Promise<void>) | null>(null);
 
   const handleSend = useCallback(async () => {
     const prompt = input.trim();

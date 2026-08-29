@@ -20,10 +20,10 @@ export async function POST(req: NextRequest) {
     }
 
     let model = modelConfigId
-      ? await (await import('@/lib/ai-providers')).getModelById(userId, modelConfigId)
-      : await getDefaultModel(userId);
+      ? await (await import('@/lib/ai-providers')).getModelById(userId, modelConfigId, 'code')
+      : await getDefaultModel('code');
     if (!model) {
-      const models = await getEnabledModels(userId);
+      const models = await getEnabledModels('code');
       model = models[0] || null;
     }
     if (!model) return NextResponse.json({ error: 'No AI model configured' }, { status: 400 });

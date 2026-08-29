@@ -192,9 +192,9 @@ export default function ChatWorkspace() {
 
   useEffect(() => { scrollToBottom(); }, [messages, streamContent, scrollToBottom]);
 
-  // Fetch models
+  // Fetch models (Chat mode → Gemini models only)
   useEffect(() => {
-    fetch('/api/models').then((r) => r.json()).then((d) => {
+    fetch('/api/models?category=chat').then((r) => r.json()).then((d) => {
       const list: ModelOption[] = (d.enabled || []).map((m: { modelId: string; displayName: string; provider: string }) => ({
         id: m.modelId, displayName: m.displayName, provider: m.provider,
       }));

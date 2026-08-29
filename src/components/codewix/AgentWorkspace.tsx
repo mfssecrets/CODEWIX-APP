@@ -54,7 +54,7 @@ export default function AgentWorkspace() {
   useEffect(() => { scrollToBottom(); }, [output, scrollToBottom]);
 
   useEffect(() => {
-    fetch('/api/models').then((r) => r.json()).then((d) => {
+    fetch('/api/models?category=code').then((r) => r.json()).then((d) => {
       const list = (d.enabled || []).map((m: { modelId: string; displayName: string; provider: string }) => ({ id: m.modelId, displayName: m.displayName, provider: m.provider }));
       setModels(list); if (list[0]) setSelectedModel(list[0].id);
     }).catch(() => {});

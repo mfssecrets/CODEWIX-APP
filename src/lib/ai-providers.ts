@@ -1,138 +1,207 @@
 /**
- * CODEWIX AI Providers — platform-managed Gemini integration.
+ * CODEWIX AI Providers — platform-managed, multi-provider.
  *
- * Design (production):
- * - The operator's `GEMINI_API_KEY` (set as a server-side env var) powers ALL
- *   users. Users never enter an API key; they simply pick a Gemini model from
- *   the list below (like Google AI Studio). Usage is gated by the token system
- *   tied to the user's subscription plan.
- * - Z.ai and Groq providers are muted for now (their stream handlers are kept
- *   for future use, but they are NOT exposed to users).
- * - The API key is ONLY read on the server (this file is imported by Route
- *   Handlers and server lib only). It is never sent to the client.
+ * Architecture (operator-provided platform keys, server-side only):
+ *   • Chat mode   → Google Gemini (GEMINI_API_KEY)
+ *   • Agent/Build → Cerebras (CEREBRAS_API_KEY) + OpenRouter (OPENROUTER_API_KEY)
+ *
+ * Users NEVER enter API keys; they pick a model from the picker (like Google
+ * AI Studio). Keys are read from env on the server and never sent to the client.
+ * Usage is gated per user by the token system tied to their subscription plan.
+ *
+ * All coding providers (Cerebras, OpenRouter) use the OpenAI-compatible
+ * /chat/completions API, so they share streamOpenAICompatible(). Gemini uses
+ * its own native streaming format.
  */
 
 export interface AIProvider {
-  provider: string;
+  provider: string;       // 'google' | 'cerebras' | 'openrouter'
   modelId: string;
   displayName: string;
   apiKey: string;
   supportsVision: boolean;
   supportsStreaming: boolean;
+  category: 'chat' | 'code';
 }
 
-export interface GeminiModelInfo {
+export interface ModelInfo {
   id: string;
+  provider: string;
   displayName: string;
   description: string;
   supportsVision: boolean;
+  category: 'chat' | 'code';
 }
 
 /**
- * The list of Gemini models users can pick from in Chat / Agent / Build.
- * Mirrors the Google AI Studio model picker. These are the current production
- * Gemini model names (verified against the generativelanguage API).
+ * Chat models — powered by the platform Gemini key (GEMINI_API_KEY).
  */
-export const GEMINI_MODELS: GeminiModelInfo[] = [
+export const CHAT_MODELS: ModelInfo[] = [
   {
     id: 'gemini-3.6-flash',
+    provider: 'google',
     displayName: 'Gemini 3.6 Flash',
-    description: 'Latest fast, cost-effective model. Great for chat & app building.',
+    description: 'Fast, multimodal. Default for Chat.',
     supportsVision: true,
+    category: 'chat',
   },
   {
     id: 'gemini-3.1-pro-preview',
+    provider: 'google',
     displayName: 'Gemini 3.1 Pro (Preview)',
-    description: 'Most capable reasoning model for complex, multi-step tasks.',
+    description: 'Most capable Gemini for complex reasoning.',
     supportsVision: true,
+    category: 'chat',
   },
   {
     id: 'gemini-3.5-flash-lite',
+    provider: 'google',
     displayName: 'Gemini 3.5 Flash-Lite',
-    description: 'Lowest-latency, budget-friendly variant for high-volume calls.',
+    description: 'Lowest-latency Gemini variant.',
     supportsVision: true,
+    category: 'chat',
   },
 ];
 
-const PLATFORM_GEMINI_KEY = process.env.GEMINI_API_KEY;
-const DEFAULT_GEMINI_MODEL_ID = process.env.GEMINI_DEFAULT_MODEL || 'gemini-3.6-flash';
+/**
+ * Coding models — power the Agent + Build Studio. Cerebras (fastest, OpenAI-
+ * compatible) + OpenRouter (many free coding models). Muted in Chat mode.
+ */
+export const CODE_MODELS: ModelInfo[] = [
+  // ── Cerebras (fastest inference, OpenAI-compatible) ──
+  {
+    id: 'llama-3.3-70b',
+    provider: 'cerebras',
+    displayName: 'Llama 3.3 70B (Cerebras)',
+    description: 'Default for Agent/Build. Fast + great at code + tool calling.',
+    supportsVision: false,
+    category: 'code',
+  },
+  {
+    id: 'llama3.1-8b',
+    provider: 'cerebras',
+    displayName: 'Llama 3.1 8B (Cerebras)',
+    description: 'Ultra-fast small model for quick edits.',
+    supportsVision: false,
+    category: 'code',
+  },
+  {
+    id: 'qwen-3-coder-30b',
+    provider: 'cerebras',
+    displayName: 'Qwen 3 Coder 30B (Cerebras)',
+    description: 'Code-specialised Qwen. Excellent for file generation.',
+    supportsVision: false,
+    category: 'code',
+  },
+  // ── OpenRouter (free coding models, OpenAI-compatible) ──
+  {
+    id: 'z-ai/glm-5.2:free',
+    provider: 'openrouter',
+    displayName: 'GLM 5.2 (OpenRouter)',
+    description: 'Z.ai GLM 5.2 — strong general + coding, 256K context.',
+    supportsVision: false,
+    category: 'code',
+  },
+  {
+    id: 'cohere/north-mini-code:free',
+    provider: 'openrouter',
+    displayName: 'Cohere North Mini Code (OpenRouter)',
+    description: 'Cohere code-specialised model, 256K context.',
+    supportsVision: false,
+    category: 'code',
+  },
+  {
+    id: 'google/gemma-4-31b-it:free',
+    provider: 'openrouter',
+    displayName: 'Gemma 4 31B (OpenRouter)',
+    description: 'Google Gemma 4 — general purpose, 262K context.',
+    supportsVision: false,
+    category: 'code',
+  },
+  {
+    id: 'nvidia/nemotron-3-super-120b-a12b:free',
+    provider: 'openrouter',
+    displayName: 'Nemotron 3 Super 120B (OpenRouter)',
+    description: 'NVIDIA large reasoning model, 262K context.',
+    supportsVision: false,
+    category: 'code',
+  },
+];
 
-const PROVIDER_META: Record<string, { supportsVision: boolean; supportsStreaming: boolean; baseUrl: string }> = {
-  google: { supportsVision: true, supportsStreaming: true, baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
-  zai: { supportsVision: true, supportsStreaming: true, baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-  groq: { supportsVision: false, supportsStreaming: true, baseUrl: 'https://api.groq.com/openai/v1' },
+export const ALL_MODELS: ModelInfo[] = [...CHAT_MODELS, ...CODE_MODELS];
+
+const PROVIDER_META: Record<string, { baseUrl: string; keyEnv: string }> = {
+  google: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', keyEnv: 'GEMINI_API_KEY' },
+  cerebras: { baseUrl: 'https://api.cerebras.ai/v1', keyEnv: 'CEREBRAS_API_KEY' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', keyEnv: 'OPENROUTER_API_KEY' },
 };
 
-function getModelMeta(modelId: string): { supportsVision: boolean; supportsStreaming: boolean } {
-  const info = GEMINI_MODELS.find((m) => m.id === modelId);
-  if (info) return { supportsVision: info.supportsVision, supportsStreaming: true };
-  const lower = modelId.toLowerCase();
-  if (lower.includes('vision') || lower.includes('gemini') || lower.includes('glm-5v') || lower.includes('gpt-4o')) return { supportsVision: true, supportsStreaming: true };
-  if (lower.includes('groq') || lower.includes('llama') || lower.includes('mixtral')) return { supportsVision: false, supportsStreaming: true };
-  return { supportsVision: false, supportsStreaming: true };
+function providerKey(provider: string): string | undefined {
+  const meta = PROVIDER_META[provider];
+  return meta ? process.env[meta.keyEnv] : undefined;
 }
 
 /**
- * Build an AIProvider for a Gemini model using the platform API key.
- * Returns null if the operator has not configured GEMINI_API_KEY.
+ * Build an AIProvider for a model id using the platform key. Returns null if
+ * the model is unknown or the provider key isn't configured.
  */
-function getPlatformGeminiModel(modelId: string): AIProvider | null {
-  if (!PLATFORM_GEMINI_KEY) return null;
-  const info = GEMINI_MODELS.find((m) => m.id === modelId);
-  const meta = getModelMeta(modelId);
+function getPlatformModel(modelId: string): AIProvider | null {
+  const info = ALL_MODELS.find((m) => m.id === modelId);
+  if (!info) return null;
+  const apiKey = providerKey(info.provider);
+  if (!apiKey) return null;
   return {
-    provider: 'google',
-    modelId,
-    displayName: info?.displayName || modelId,
-    apiKey: PLATFORM_GEMINI_KEY,
-    supportsVision: meta.supportsVision,
-    supportsStreaming: meta.supportsStreaming,
+    provider: info.provider,
+    modelId: info.id,
+    displayName: info.displayName,
+    apiKey,
+    supportsVision: info.supportsVision,
+    supportsStreaming: true,
+    category: info.category,
   };
 }
 
-/**
- * Returns true when the platform Gemini key is configured (for health checks).
- */
+/** True when at least one provider key is configured. */
 export function isPlatformAIConfigured(): boolean {
-  return Boolean(PLATFORM_GEMINI_KEY);
+  return Boolean(providerKey('google') || providerKey('cerebras') || providerKey('openrouter'));
+}
+
+/** Models for a category ('chat' | 'code'), or all if omitted. */
+export function getAvailableModels(category?: 'chat' | 'code'): ModelInfo[] {
+  if (!category) return ALL_MODELS;
+  return ALL_MODELS.filter((m) => m.category === category);
+}
+
+/** Default model id for a category. */
+export function getDefaultModelId(category: 'chat' | 'code'): string {
+  return category === 'chat' ? 'gemini-3.6-flash' : 'llama-3.3-70b';
 }
 
 /**
- * The full list of available platform-provided models (for the model picker UI
- * via /api/models). Z.ai and Groq are intentionally NOT included.
+ * Resolve a model id to an AIProvider. userId is accepted for compatibility
+ * but not used (keys are platform-wide). Falls back to the category default if
+ * the model is unknown; `categoryHint` picks the right default when no id is
+ * supplied (chat → Gemini, code → Cerebras).
  */
-export function getAvailableModels(): GeminiModelInfo[] {
-  return GEMINI_MODELS;
+export async function getModelById(_userId: string, modelId: string, categoryHint: 'chat' | 'code' = 'chat'): Promise<AIProvider | null> {
+  const id = modelId || getDefaultModelId(categoryHint);
+  return getPlatformModel(id);
 }
 
-/** Default model id used when the user hasn't explicitly picked one. */
-export function getDefaultModelId(): string {
-  return DEFAULT_GEMINI_MODEL_ID;
+/** Default model for a category. */
+export async function getDefaultModel(category: 'chat' | 'code' = 'chat'): Promise<AIProvider | null> {
+  return getPlatformModel(getDefaultModelId(category));
 }
 
-/**
- * Resolve the model to use for a request.
- * `modelId` is the Gemini model id string (e.g. "gemini-2.5-flash") sent by the
- * client. Falls back to the platform default. userId is accepted for
- * compatibility with existing callers but is not used (keys are platform-wide).
- */
-export async function getModelById(_userId: string, modelId: string): Promise<AIProvider | null> {
-  const id = modelId || DEFAULT_GEMINI_MODEL_ID;
-  return getPlatformGeminiModel(id);
+/** All enabled platform models for a category. */
+export async function getEnabledModels(category: 'chat' | 'code' = 'chat'): Promise<AIProvider[]> {
+  return getAvailableModels(category)
+    .map((m) => getPlatformModel(m.id))
+    .filter((m): m is AIProvider => m !== null);
 }
 
-/** Default model (platform Gemini key + default Gemini model). */
-export async function getDefaultModel(_userId?: string): Promise<AIProvider | null> {
-  return getPlatformGeminiModel(DEFAULT_GEMINI_MODEL_ID);
-}
-
-/** All enabled platform models (the full Gemini list). */
-export async function getEnabledModels(_userId?: string): Promise<AIProvider[]> {
-  if (!PLATFORM_GEMINI_KEY) return [];
-  return GEMINI_MODELS.map((m) => getPlatformGeminiModel(m.id)!).filter(Boolean);
-}
-
-async function* streamGoogle(model: AIProvider, messages: { role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }[]): AsyncGenerator<string> {
+// ── Gemini native streaming ──────────────────────────────────────────
+async function* streamGoogle(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
   const contents = messages
     .filter((m) => m.role !== 'system')
     .map((m) => {
@@ -199,7 +268,8 @@ async function* streamGoogle(model: AIProvider, messages: { role: string; conten
   }
 }
 
-async function* streamOpenAICompatible(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>, baseUrl: string): AsyncGenerator<string> {
+// ── OpenAI-compatible streaming (Cerebras + OpenRouter) ──────────────
+async function* streamOpenAICompatible(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>, baseUrl: string, extraHeaders: Record<string, string> = {}): AsyncGenerator<string> {
   const cleaned = messages.map((m) => ({
     role: m.role,
     content: typeof m.content === 'string' ? m.content : (m.content as Array<{ type: string; text?: string }>).map((p) => p.text || '').join('\n'),
@@ -208,13 +278,13 @@ async function* streamOpenAICompatible(model: AIProvider, messages: Array<{ role
   const url = `${baseUrl}/chat/completions`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}`, ...extraHeaders },
     body: JSON.stringify({ model: model.modelId, messages: cleaned, stream: true, temperature: 0.7, max_tokens: 8192 }),
   });
 
   if (!res.ok) {
     const err = await res.text().catch(() => '');
-    throw new Error(`API error (${res.status}): ${err}`);
+    throw new Error(`${model.provider} API error (${res.status}): ${err}`);
   }
 
   const reader = res.body?.getReader();
@@ -241,93 +311,16 @@ async function* streamOpenAICompatible(model: AIProvider, messages: Array<{ role
   }
 }
 
-async function* streamGroq(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
-  yield* streamOpenAICompatible(model, messages, PROVIDER_META.groq.baseUrl);
-}
-
-async function* streamZai(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
-  yield* streamOpenAICompatible(model, messages, PROVIDER_META.zai.baseUrl);
-}
-
-export function streamProvider(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
+export function streamChat(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
   switch (model.provider) {
     case 'google': return streamGoogle(model, messages);
-    case 'groq': return streamGroq(model, messages);
-    case 'zai': return streamZai(model, messages);
+    case 'cerebras': return streamOpenAICompatible(model, messages, PROVIDER_META.cerebras.baseUrl);
+    case 'openrouter': return streamOpenAICompatible(model, messages, PROVIDER_META.openrouter.baseUrl, {
+      'HTTP-Referer': 'https://codewix.in',
+      'X-Title': 'CodeWIX',
+    });
     default: throw new Error(`Unknown provider: ${model.provider}`);
   }
-}
-
-/**
- * Transparent fallback transport: when the primary Gemini provider is
- * unreachable (e.g. Google returns a region/auth/network error), the same
- * messages are run through the Z.ai GLM API via a direct fetch (NO SDK — the
- * z-ai-web-dev-sdk needs a .z-ai-config FILE which doesn't exist on Cloudflare
- * Workers). Set the ZAI_API_KEY Worker secret to enable this fallback; if it's
- * not set, the original Gemini error is surfaced instead.
- *
- * This is an operational resilience layer — it is NOT a user-selectable provider.
- * Z.ai and Groq remain muted in the model picker by design.
- *
- * Set AI_DISABLE_FALLBACK=1 to disable and surface Gemini errors directly.
- */
-async function* streamZaiFallback(messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
-  const zaiKey = process.env.ZAI_API_KEY;
-  if (!zaiKey) {
-    throw new Error('Gemini API request failed and no fallback is configured (set ZAI_API_KEY as a Worker secret to enable the Z.ai fallback, or set AI_DISABLE_FALLBACK=1).');
-  }
-  const cleaned = messages.map((m) => ({
-    role: m.role,
-    content: typeof m.content === 'string'
-      ? m.content
-      : (m.content as Array<{ type: string; text?: string }>).map((p) => p.text || '').join('\n'),
-  }));
-  const res = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${zaiKey}` },
-    body: JSON.stringify({ model: process.env.ZAI_MODEL || 'glm-4-plus', messages: cleaned, stream: false, temperature: 0.7, max_tokens: 8192, thinking: { type: 'disabled' } }),
-  });
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`Z.ai fallback error (${res.status}): ${err}`);
-  }
-  const data: any = await res.json();
-  const full = data?.choices?.[0]?.message?.content || '';
-  // Emit in small chunks so the SSE UI streams naturally.
-  const chunkSize = 8;
-  for (let i = 0; i < full.length; i += chunkSize) {
-    yield full.slice(i, i + chunkSize);
-  }
-}
-
-/**
- * Resilient chat stream. Tries the configured provider (Gemini) first. If it
- * yields nothing before failing (hard error at request time — e.g. region
- * block, network, auth), transparently falls back to the Z.ai transport. If it
- * already streamed partial content and then failed, the error is re-thrown so
- * the route can surface it (no duplicate/garbled output).
- */
-export async function* streamChat(model: AIProvider, messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>): AsyncGenerator<string> {
-  const disableFallback = process.env.AI_DISABLE_FALLBACK === '1' || process.env.AI_DISABLE_FALLBACK === 'true';
-  let yielded = false;
-  let providerError: unknown = null;
-  try {
-    for await (const chunk of streamProvider(model, messages)) {
-      yielded = true;
-      yield chunk;
-    }
-  } catch (err) {
-    providerError = err;
-  }
-  if (yielded) {
-    if (providerError) throw providerError;
-    return;
-  }
-  // Nothing was yielded — primary provider hard-failed before producing output.
-  if (disableFallback) {
-    throw providerError instanceof Error ? providerError : new Error('AI provider unavailable');
-  }
-  yield* streamZaiFallback(messages);
 }
 
 export async function generateTitle(model: AIProvider, userMessage: string): Promise<string> {

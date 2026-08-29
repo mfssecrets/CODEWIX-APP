@@ -43,6 +43,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
           RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
@@ -52,6 +54,8 @@ jobs:
           for kv in \
             "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY" \
             "GEMINI_API_KEY=$GEMINI_API_KEY" \
+            "CEREBRAS_API_KEY=$CEREBRAS_API_KEY" \
+            "OPENROUTER_API_KEY=$OPENROUTER_API_KEY" \
             "RESEND_API_KEY=$RESEND_API_KEY" \
             "RAZORPAY_KEY_ID=$RAZORPAY_KEY_ID" \
             "RAZORPAY_KEY_SECRET=$RAZORPAY_KEY_SECRET" \

@@ -12,20 +12,16 @@ NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY          # server-only secret (bypasses RLS)
 
-# ---- AI: Platform Gemini key (REQUIRED) ----
-# This operator-provided key powers ALL users. Users never see or enter it;
-# they pick a Gemini model from the picker (like Google AI Studio).
-# Usage is gated per user by the token system tied to their subscription plan.
+# ---- AI: Chat mode — Google Gemini (server-side ONLY) ----
+# Powers the Chat workspace. Users pick a Gemini model from the picker.
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-# Default model used when the user hasn't explicitly picked one.
-# Available models are defined in src/lib/ai-providers.ts (GEMINI_MODELS).
 GEMINI_DEFAULT_MODEL=gemini-3.6-flash
 
-# Optional: set to "1" to disable the transparent fallback transport and
-# surface Gemini errors directly. By default, if Gemini is unreachable the
-# same request is retried through a built-in transport so users always get a
-# response. Leave unset to keep the fallback enabled (recommended).
-# AI_DISABLE_FALLBACK=1
+# ---- AI: Agent/Build mode — Cerebras + OpenRouter (server-side ONLY) ----
+# Powers the Agent + Build Studio (coding models). Users pick from the
+# coding-model picker. Both are OpenAI-compatible APIs.
+CEREBRAS_API_KEY=YOUR_CEREBRAS_API_KEY
+OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY
 
 # ---- Resend (transactional email, REQUIRED) ----
 # Used for the welcome email on signup. Supabase Auth OTP emails are sent by

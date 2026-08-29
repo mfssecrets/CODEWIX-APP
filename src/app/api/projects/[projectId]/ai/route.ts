@@ -126,12 +126,12 @@ export async function POST(
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    // Get AI model
+    // Get AI model (Build Studio uses coding models — never Gemini)
     let model;
     if (modelConfigId) {
-      model = await getModelById(userId, modelConfigId);
+      model = await getModelById(userId, modelConfigId, 'code');
     } else {
-      model = await getDefaultModel(userId);
+      model = await getDefaultModel('code');
     }
     if (!model) {
       return NextResponse.json({ error: 'No AI model configured. Please add a model in settings.' }, { status: 400 });

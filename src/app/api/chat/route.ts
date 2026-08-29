@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
     }
 
     let model = modelConfigId
-      ? await (await import('@/lib/ai-providers')).getModelById(userId, modelConfigId)
-      : await getDefaultModel(userId);
+      ? await (await import('@/lib/ai-providers')).getModelById(userId, modelConfigId, 'chat')
+      : await getDefaultModel('chat');
     if (!model) {
-      const models = await getEnabledModels(userId);
+      const models = await getEnabledModels('chat');
       model = models[0] || null;
     }
     if (!model) return NextResponse.json({ error: 'No AI model configured. Please add a model in Settings.' }, { status: 400 });
