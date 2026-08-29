@@ -7,6 +7,7 @@ import {
   ArrowUp, Plus, Paperclip, X, Copy, Check, RefreshCw, Square, Pencil, Trash2,
   ChevronDown, Loader2, Image as ImageIcon, FileText, AlertCircle, StopCircle,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -294,6 +295,10 @@ export default function ChatWorkspace() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        if (res.status === 429 && data.tokenExhausted) {
+          window.dispatchEvent(new CustomEvent('codewix:token-exhausted', { detail: data }));
+          throw new Error(data.error || 'Token limit reached');
+        }
         throw new Error(data.error || 'Failed to send message');
       }
 
@@ -313,7 +318,7 @@ export default function ChatWorkspace() {
           if (payload === '[DONE]') break;
           try {
             const parsed = JSON.parse(payload);
-            if (parsed.error) { setError(parsed.error); break; }
+            if (parsed.error) { setError(parsed.error); toast.error(parsed.error); break; }
             if (parsed.content) { full += parsed.content; setStreamContent(full); }
           } catch { /* skip */ }
         }
@@ -324,9 +329,11 @@ export default function ChatWorkspace() {
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        // User stopped generation
+        toast.info('Generation stopped');
       } else {
-        setError(err instanceof Error ? err.message : 'Something went wrong');
+        const msg = err instanceof Error ? err.message : 'Something went wrong';
+        setError(msg);
+        toast.error(msg);
       }
     } finally {
       setStreaming(false);
@@ -347,6 +354,7 @@ export default function ChatWorkspace() {
 
   const handleDelete = async (msgId: string) => {
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    toast.success('Message deleted');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

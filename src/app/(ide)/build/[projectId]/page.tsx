@@ -17,6 +17,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { toast } from 'sonner';
 import {
   Send,
   Square,
@@ -945,7 +946,13 @@ export default function BuilderIDEPage() {
         signal: abortRef.current.signal,
       });
 
-      if (!res.ok) throw new Error('Request failed');
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        if (res.status === 429 && d.tokenExhausted) {
+          window.dispatchEvent(new CustomEvent('codewix:token-exhausted', { detail: d }));
+        }
+        throw new Error(d.error || 'Request failed');
+      }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('No reader');
@@ -1039,6 +1046,7 @@ export default function BuilderIDEPage() {
               : m
           )
         );
+        toast.error(err.message || 'AI request failed. Your token was refunded.');
       }
     } finally {
       setStreaming(false);

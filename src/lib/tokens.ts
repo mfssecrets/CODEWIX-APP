@@ -140,6 +140,36 @@ export async function checkAndConsumeToken(userId: string, meta?: { action?: str
   };
 }
 
+/**
+ * Refund a previously-consumed plan token. Call this when an AI request fails
+ * or is incomplete (e.g. the provider stream errored before producing output)
+ * so the user isn't charged for a broken request. Free-tier prompts (which
+ * logged tokens_used: 0) don't need refunding — this is a no-op for them.
+ *
+ * Returns true if a plan token was actually refunded.
+ */
+export async function refundToken(userId: string, meta?: { action?: string; project_id?: string; conversation_id?: string }): Promise<boolean> {
+  const supabase = createServiceClient();
+  const bal = await getTokenBalance(userId);
+  if (!bal) return false;
+  // Only refund if tokens_used > 0 (don't go negative).
+  if (bal.tokens_used <= 0) return false;
+  const { error } = await supabase
+    .from('token_balances')
+    .update({ tokens_used: Math.max(0, bal.tokens_used - 1) })
+    .eq('user_id', userId);
+  if (!error) {
+    await supabase.from('token_usage').insert({
+      user_id: userId,
+      tokens_used: 0,
+      action: `${meta?.action ?? 'chat'}_refund`,
+      project_id: meta?.project_id ?? null,
+      conversation_id: meta?.conversation_id ?? null,
+    });
+  }
+  return !error;
+}
+
 // Check how many free prompts the user has left (chat + agent combined).
 export async function getFreePromptCount(userId: string): Promise<{ used: number; limit: number; hasFree: boolean }> {
   const used = await getFreeUsageCount(userId, 'chat'); // counts chat + agent (in query)

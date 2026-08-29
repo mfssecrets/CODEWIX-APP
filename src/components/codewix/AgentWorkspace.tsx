@@ -7,6 +7,7 @@ import {
   ArrowUp, Plus, Paperclip, X, Loader2, FileText, AlertCircle, Square,
   Play, CheckCircle2, Circle, Clock, Code2, Wrench, TestTube, Bug, Hammer,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -108,7 +109,7 @@ export default function AgentWorkspace() {
         }),
       });
 
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Agent failed'); }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); if (res.status === 429 && d.tokenExhausted) { window.dispatchEvent(new CustomEvent('codewix:token-exhausted', { detail: d })); } throw new Error(d.error || 'Agent failed'); }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('No response');
@@ -150,7 +151,9 @@ export default function AgentWorkspace() {
       setMessages((prev) => [...prev, { role: 'assistant', content: full }]);
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
-        setError(err instanceof Error ? err.message : 'Agent failed');
+        const msg = err instanceof Error ? err.message : 'Agent failed';
+        setError(msg);
+        toast.error(msg);
       }
     } finally {
       setRunning(false); setAbortCtrl(null);
@@ -167,7 +170,6 @@ export default function AgentWorkspace() {
     if (!prompt.trim()) return;
     setBuilding(true);
     try {
-      // Derive a short project name from the prompt (first ~40 chars).
       const projName = prompt.trim().slice(0, 60).replace(/\s+/g, ' ').trim() || 'New Project';
       const res = await fetch('/api/projects', {
         method: 'POST',
@@ -179,10 +181,12 @@ export default function AgentWorkspace() {
         throw new Error(d.error || 'Failed to create project');
       }
       const { project } = await res.json();
-      // Navigate to the Build Studio with the prompt auto-loaded.
+      toast.success('Opening Build Studio…');
       router.push(`/build/${project.id}?prompt=${encodeURIComponent(prompt.trim())}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to open Build Studio');
+      const msg = err instanceof Error ? err.message : 'Failed to open Build Studio';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBuilding(false);
     }

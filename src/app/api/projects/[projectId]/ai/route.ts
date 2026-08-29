@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { checkAndConsumeToken } from '@/lib/tokens';
+import { checkAndConsumeToken, refundToken } from '@/lib/tokens';
 import { getDefaultModel, getModelById, streamChat } from '@/lib/ai-providers';
 import { generateTitle } from '@/lib/ai-providers';
 import { detectLanguage } from '@/lib/language-detect';
@@ -101,7 +101,7 @@ export async function POST(
     // Token check
     const tokenCheck = await checkAndConsumeToken(userId, { action: 'builder', project_id: projectId });
     if (!tokenCheck.allowed) {
-      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached' }, { status: 429 });
+      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached', tokenExhausted: true }, { status: 429 });
     }
 
     const { data: project } = await supabase
@@ -268,6 +268,10 @@ export async function POST(
           const errMsg = error instanceof Error ? error.message : 'Stream error';
           const errData = JSON.stringify({ type: 'error', error: errMsg });
           controller.enqueue(encoder.encode(`data: ${errData}\n\n`));
+          // Refund the plan token if the build AI failed before producing any output.
+          if (!fullResponse && !tokenCheck.freeTier) {
+            await refundToken(userId, { action: 'builder', project_id: projectId });
+          }
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
         }

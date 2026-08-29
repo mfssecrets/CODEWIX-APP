@@ -1,24 +1,22 @@
 "use client";
 
 import { motion } from 'framer-motion';
-import dynamic from 'next/dynamic';
 import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-
-const Background3D = dynamic(() => import('@/components/codewix/Background3D'), { ssr: false });
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden">
-      <Background3D />
-      <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-violet-50/30 to-slate-50">
+      {/* Subtle decorative blobs (no 3D) */}
+      <div className="pointer-events-none absolute -top-40 -right-40 w-96 h-96 rounded-full bg-violet-200/30 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-purple-200/20 blur-3xl" />
 
       {/* Home back button */}
       <button
         onClick={() => router.push('/')}
-        className="absolute top-5 left-5 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/70 backdrop-blur-sm border border-slate-200/50 text-[13px] font-medium text-slate-500 hover:bg-white hover:text-slate-700 shadow-sm hover:shadow-md transition-all duration-200"
+        className="absolute top-5 left-5 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[13px] font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 shadow-sm hover:shadow-md transition-all duration-200"
       >
         <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
         <span>Home</span>

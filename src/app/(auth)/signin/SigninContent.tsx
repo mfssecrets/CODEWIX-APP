@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Loader2, Mail, ArrowLeft, KeyRound } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import AuthCard from '@/components/codewix/AuthCard';
 import { createClient } from '@/lib/supabase/client';
 
@@ -34,9 +35,12 @@ export default function SigninContent() {
       });
       if (err) throw err;
       setStep(2);
+      toast.success('Verification code sent to your email');
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send code');
+      const msg = err instanceof Error ? err.message : 'Failed to send code';
+      setError(msg);
+      toast.error(msg);
     } finally { setSending(false); }
   }, [email, redirectTo, supabase]);
 
@@ -74,10 +78,13 @@ export default function SigninContent() {
         type: 'email',
       });
       if (err) throw err;
+      toast.success('Signed in successfully');
       router.push(redirectTo);
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Verification failed');
+      const msg = err instanceof Error ? err.message : 'Verification failed';
+      setError(msg);
+      toast.error(msg);
     } finally { setVerifying(false); }
   }, [otp, email, redirectTo, router, supabase]);
 

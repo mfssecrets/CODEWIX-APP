@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { checkAndConsumeToken } from '@/lib/tokens';
+import { checkAndConsumeToken, refundToken } from '@/lib/tokens';
 import { getDefaultModel, getEnabledModels, streamChat, generateTitle } from '@/lib/ai-providers';
 
 export async function POST(req: NextRequest) {
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     // Token check
     const tokenCheck = await checkAndConsumeToken(userId, { action: 'agent' });
     if (!tokenCheck.allowed) {
-      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached' }, { status: 429 });
+      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached', tokenExhausted: true }, { status: 429 });
     }
 
     let model = modelConfigId
@@ -133,6 +133,10 @@ export async function POST(req: NextRequest) {
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : 'Agent failed';
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`));
+          // Refund the plan token if the agent failed before producing any output.
+          if (!fullResponse && !tokenCheck.freeTier) {
+            await refundToken(userId, { action: 'agent', conversation_id: convoId });
+          }
           const sb = await createClient();
           await sb.from('agent_tasks').update({ error: errMsg, status: 'completed', activity: 'Failed', build_status: 'failed' }).eq('id', task!.id);
           if (fullResponse) await sb.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: fullResponse });

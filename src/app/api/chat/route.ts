@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { checkAndConsumeToken } from '@/lib/tokens';
+import { checkAndConsumeToken, refundToken } from '@/lib/tokens';
 import { getDefaultModel, getEnabledModels, streamChat, generateTitle } from '@/lib/ai-providers';
 
 export async function POST(req: NextRequest) {
@@ -15,10 +15,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    // Token check
+    // Token check — returns whether this prompt was free or paid
     const tokenCheck = await checkAndConsumeToken(userId, { action: 'chat' });
     if (!tokenCheck.allowed) {
-      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached' }, { status: 429 });
+      return NextResponse.json({ error: tokenCheck.reason || 'Token limit reached', tokenExhausted: true }, { status: 429 });
     }
 
     let model = modelConfigId
@@ -139,6 +139,10 @@ export async function POST(req: NextRequest) {
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : 'Stream failed';
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: errMsg })}\n\n`));
+          // Refund the plan token if the stream failed before producing any output.
+          if (!fullResponse && !tokenCheck.freeTier) {
+            await refundToken(userId, { action: 'chat', conversation_id: convoId });
+          }
           if (fullResponse) {
             const sb = await createClient();
             await sb.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: fullResponse });
